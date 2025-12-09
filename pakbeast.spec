@@ -7,7 +7,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('icon.png', '.'),
+        ('favicon.ico', '.'),
     ],
     hiddenimports=[
         'customtkinter',
@@ -37,7 +37,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # disable UPX to reduce AV heuristics
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # Set to True if you want to see console output for debugging
@@ -46,6 +46,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.png',  # Use icon.png as the executable icon
+    icon='favicon.ico',  # Use favicon.ico as the executable icon
 )
 

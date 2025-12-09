@@ -376,8 +376,8 @@ def build_colors_tab(app: 'App', parent):
     )
     section_desc.pack(anchor="w", padx=16, pady=(0, 12))
     
-    # Use dark mode colors (custom theme)
-    color_vars = {k: ctk.StringVar(value=v) for k, v in app.settings.colors["dark"].items()}
+    # Use current colors
+    color_vars = {k: ctk.StringVar(value=v) for k, v in app.settings.colors.items()}
     color_buttons = {}
     
     def create_picker(key, label_text):
@@ -449,14 +449,14 @@ def build_colors_tab(app: 'App', parent):
         # Apply immediately
         from operations import preview_handler
         for key, var in color_vars.items():
-            app.settings.colors["dark"][key] = var.get()
+            app.settings.colors[key] = var.get()
         preview_handler.configure_text_tags(app)
         app._apply_syntax_highlighting()
     
     def save_colors():
         """Save color settings."""
         for key, var in color_vars.items():
-            app.settings.colors["dark"][key] = var.get()
+            app.settings.colors[key] = var.get()
         app.settings.save()
         from operations import preview_handler
         preview_handler.configure_text_tags(app)

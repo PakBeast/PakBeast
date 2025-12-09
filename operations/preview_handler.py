@@ -34,9 +34,8 @@ def configure_text_tags(app: 'App'):
         except:
             is_dark = False
     
-    # Use user-defined colors from settings, or fallback to theme-appropriate defaults
-    mode = "dark" if is_dark else "light"
-    colors = app.settings.colors[mode]
+    # Use user-defined colors from settings
+    colors = app.settings.colors
     
     # Configure syntax highlighting tags
     app.txt.tag_configure("param", foreground=colors["param"])

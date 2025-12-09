@@ -183,10 +183,6 @@ def edits_context(app: 'App', event) -> None:
         
         menu.add_command(label="Toggle Enabled State", command=lambda: toggle_selected_edit(app))
         menu.add_command(label="Remove Modification", command=lambda: delete_selected_edit(app))
-        menu.add_separator()
-
-    menu.add_command(label="Enable All Filtered", command=lambda: enable_all_filtered(app))
-    menu.add_command(label="Disable All Filtered", command=lambda: disable_all_filtered(app))
     
     menu.post(event.x_root, event.y_root)
 

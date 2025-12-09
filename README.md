@@ -13,17 +13,20 @@ A modern tool for editing `.pak` files in **Dying Light: The Beast**. PakBeast p
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/PakBeast/PakBeast.git
 cd PakBeast
 ```
 
 2. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Run the application:
+
 ```bash
 python main.py
 ```
@@ -38,6 +41,7 @@ python -m PyInstaller pakbeast.spec
 ```
 
 Or use the build script:
+
 ```bash
 build.bat
 ```
@@ -46,11 +50,11 @@ The executable will be in the `dist` folder.
 
 ## Usage
 
-1. **Load a .pak file**: File → Open .pak File
-2. **Search**: Enter a parameter or property name in the search box
-3. **Edit**: Double-click any result to modify its value
-4. **Save Project**: File → Save Project (saves your edits as JSON)
-5. **Pack**: File → Pack .pak to create a modified `.pak` file
+1. **Load a .pak file**: Click the toolbar button **Open Game Data**.
+2. **Search**: Enter a parameter or property name in the search box.
+3. **Edit**: Double-click any result to modify its value.
+4. **Save Project**: Click the toolbar button **Save Project** (saves your edits as JSON).
+5. **Pack**: Click the toolbar button **Build Mode** to create the modified `.pak` file.
 
 ## Keyboard Shortcuts
 
@@ -74,7 +78,7 @@ PakBeast/
 ├── ui/            # UI components and builders
 ├── logic/         # Business logic (scanner)
 ├── main.py        # Application entry point
-├── icon.png       # Application icon
+├── favicon.ico    # Application icon
 ├── pakbeast.spec  # PyInstaller configuration
 └── requirements.txt
 ```

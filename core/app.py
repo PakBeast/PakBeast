@@ -58,10 +58,8 @@ class App(ctk.CTk):
         y = (screen_height // 2) - (height // 2)
         self.geometry(f"{width}x{height}+{x}+{y}")
         
-        # Configure appearance - use system theme by default, or user preference
-        appearance_mode = "system"  # Follow OS theme, or use "dark"/"light" for fixed mode
-        if self.settings.dark_mode:
-            appearance_mode = "dark"
+        # Configure appearance - follow OS theme
+        appearance_mode = "system"
         ctk.set_appearance_mode(appearance_mode)
         ctk.set_default_color_theme("blue")  # Use default blue theme
         
@@ -98,52 +96,34 @@ class App(ctk.CTk):
     def _set_app_icon(self) -> None:
         """Set the application window icon."""
         try:
-            # Get the path to icon.png relative to this file
-            # app.py is in pakbeast/core/, icon.png is in pakbeast/
-            icon_path = Path(__file__).parent.parent / "icon.png"
-            # Convert to absolute path to ensure it's found
-            icon_path = icon_path.resolve()
-            
-            if not icon_path.exists():
-                return
-            
-            # For CustomTkinter windows, we need to access the underlying tkinter window
-            # CTk has a 'tk' attribute that gives us the tkinter window
-            tk_window = self.tk if hasattr(self, 'tk') else self
-            
-            # Use PIL/Pillow with iconphoto (works best for PNG files on all platforms)
-            try:
-                from PIL import Image, ImageTk
-                img = Image.open(icon_path)
-                if not hasattr(self, '_icon_photo') or self._icon_photo is None:
-                    self._icon_photo = ImageTk.PhotoImage(img)
-                # Set as default (True) so it applies to all windows
+            from ui.utils import _load_icon_photo
+
+            photo_info = _load_icon_photo()
+            photo = None
+            icon_path = None
+            if photo_info:
+                photo, icon_path = photo_info
+
+            tk_window = self.tk if hasattr(self, "tk") else self
+
+            if photo is not None:
+                self._icon_photo = photo
                 tk_window.iconphoto(True, self._icon_photo)
-            except ImportError:
-                # Fallback: If PIL is not available, try iconbitmap (Windows-specific, works with .ico)
-                if sys.platform.startswith('win'):
-                    try:
-                        tk_window.iconbitmap(str(icon_path))
-                    except Exception:
-                        try:
-                            tk_window.wm_iconbitmap(str(icon_path))
-                        except Exception:
-                            pass
-                else:
-                    # On non-Windows without PIL, try iconbitmap as last resort
-                    try:
-                        tk_window.iconbitmap(str(icon_path))
-                    except Exception:
-                        pass
-            except Exception:
-                # If PIL fails for other reasons, try fallback methods
-                if sys.platform.startswith('win'):
-                    try:
-                        tk_window.iconbitmap(str(icon_path))
-                    except Exception:
-                        pass
+                try:
+                    import tkinter as tk
+
+                    if tk._default_root:
+                        tk._default_root.iconphoto(True, self._icon_photo)
+                except Exception:
+                    pass
+                return
+
+            if icon_path:
+                try:
+                    tk_window.iconbitmap(str(icon_path))
+                except Exception:
+                    pass
         except Exception:
-            # Silently fail if icon cannot be set
             pass
     
     # File Operations

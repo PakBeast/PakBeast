@@ -42,12 +42,11 @@ def show_color_settings_dialog(
     
     ctk.CTkLabel(
         main_frame,
-        text="Customize syntax highlighting colors for the current theme:",
+        text="Customize syntax highlighting colors:",
         font=ctk.CTkFont(size=12)
     ).pack(anchor="w", pady=(0, 20))
     
-    mode = "dark" if settings.dark_mode else "light"
-    color_vars = {k: ctk.StringVar(value=v) for k, v in settings.colors[mode].items()}
+    color_vars = {k: ctk.StringVar(value=v) for k, v in settings.colors.items()}
     
     def create_picker(key, label_text):
         """Create a color picker row."""
@@ -81,7 +80,7 @@ def show_color_settings_dialog(
     def save_colors():
         """Save color settings."""
         for key, var in color_vars.items():
-            settings.colors[mode][key] = var.get()
+            settings.colors[key] = var.get()
         settings.save()
         on_color_change()
         win.destroy()

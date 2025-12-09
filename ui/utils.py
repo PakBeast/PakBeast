@@ -3,6 +3,8 @@
 import sys
 import customtkinter as ctk
 from pathlib import Path
+from functools import lru_cache
+from typing import Optional, Tuple
 
 
 def shorten_path(path: str | Path, max_length: int = 50) -> str:
@@ -94,6 +96,52 @@ def get_preview_colors() -> tuple[str, str, str]:
         return "#FFFFFF", "#000000", "#e8e8e8"  # bg, fg, highlight_bg
 
 
+_ICON_PHOTO = None
+
+
+@lru_cache(maxsize=1)
+def _resolve_icon_path() -> Optional[Path]:
+    """Return the best icon path, checking frozen (_MEIPASS) and project root."""
+    candidates = []
+    try:
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            base = Path(sys._MEIPASS)
+            candidates.append(base / "favicon.ico")
+            candidates.append(base / "icon.ico")
+    except Exception:
+        pass
+    base = Path(__file__).parent.parent
+    candidates.append(base / "favicon.ico")
+    candidates.append(base / "icon.ico")
+    for path in candidates:
+        if path.exists():
+            return path.resolve()
+    return None
+
+
+@lru_cache(maxsize=1)
+def _load_icon_photo() -> Tuple[Optional[object], Optional[Path]]:
+    """Load and cache the icon image as PhotoImage (PIL preferred, tk fallback)."""
+    icon_path = _resolve_icon_path()
+    if not icon_path:
+        return None, None
+    photo = None
+    if icon_path.suffix.lower() == ".png":
+        try:
+            from PIL import Image, ImageTk
+
+            img = Image.open(icon_path)
+            photo = ImageTk.PhotoImage(img)
+        except Exception:
+            try:
+                import tkinter as tk
+
+                photo = tk.PhotoImage(file=str(icon_path))
+            except Exception:
+                photo = None
+    return photo, icon_path
+
+
 def set_window_icon(window: ctk.CTk | ctk.CTkToplevel) -> None:
     """
     Set the application icon on a window (main window or dialog).
@@ -102,54 +150,32 @@ def set_window_icon(window: ctk.CTk | ctk.CTkToplevel) -> None:
         window: The window to set the icon on (CTk or CTkToplevel)
     """
     try:
-        # Get the path to icon.png relative to this file
-        # utils.py is in pakbeast/ui/, icon.png is in pakbeast/
-        icon_path = Path(__file__).parent.parent / "icon.png"
-        # Convert to absolute path to ensure it's found
-        icon_path = icon_path.resolve()
-        
-        if not icon_path.exists():
-            return
-        
-        # For CustomTkinter windows, we need to access the underlying tkinter window
-        # CTk and CTkToplevel have a 'tk' attribute that gives us the tkinter window
-        tk_window = window.tk if hasattr(window, 'tk') else window
-        
-        # Use PIL/Pillow to load the icon (works best for PNG files on all platforms)
-        try:
-            from PIL import Image, ImageTk
-            img = Image.open(icon_path)
-            # Convert to PhotoImage and store reference to prevent garbage collection
-            if not hasattr(window, '_icon_photo'):
-                window._icon_photo = ImageTk.PhotoImage(img)
-            # Use iconphoto which works on all platforms (Windows, Linux, macOS)
-            # Set as default (True) so it applies to all windows
+        tk_window = window.tk if hasattr(window, "tk") else window
+        photo_info = _load_icon_photo()
+        photo = None
+        icon_path = None
+        if photo_info:
+            photo, icon_path = photo_info
+
+        if photo is not None:
+            window._icon_photo = photo  # prevent GC
             tk_window.iconphoto(True, window._icon_photo)
-        except ImportError:
-            # Fallback: If PIL is not available, try iconbitmap (Windows-specific, works with .ico)
-            if sys.platform.startswith('win'):
-                try:
-                    tk_window.iconbitmap(str(icon_path))
-                except Exception:
-                    try:
-                        tk_window.wm_iconbitmap(str(icon_path))
-                    except Exception:
-                        pass
-            else:
-                # On non-Windows without PIL, try iconbitmap as last resort
-                try:
-                    tk_window.iconbitmap(str(icon_path))
-                except Exception:
-                    pass
-        except Exception:
-            # If PIL fails for other reasons, try fallback methods
-            if sys.platform.startswith('win'):
-                try:
-                    tk_window.iconbitmap(str(icon_path))
-                except Exception:
-                    pass
+            # Also set as default root icon if available
+            try:
+                import tkinter as tk
+
+                if tk._default_root:
+                    tk._default_root.iconphoto(True, window._icon_photo)
+            except Exception:
+                pass
+            return
+
+        if icon_path:
+            try:
+                tk_window.iconbitmap(str(icon_path))
+            except Exception:
+                pass
     except Exception:
-        # Silently fail if icon cannot be set
         pass
 
 
