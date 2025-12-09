@@ -12,28 +12,7 @@ from logic.scanner import _find_block_context_name
 
 
 def configure_text_tags(app: 'App'):
-    """Configure text tags for syntax highlighting using CustomTkinter theme colors."""
-    import customtkinter as ctk
-    
-    # Get current appearance mode
-    current_mode = ctk.get_appearance_mode()
-    if current_mode == "Dark":
-        is_dark = True
-    elif current_mode == "Light":
-        is_dark = False
-    else:  # System mode - try to detect
-        try:
-            import tkinter as tk
-            test_root = tk.Tk()
-            test_root.withdraw()
-            bg = test_root.cget("bg")
-            test_root.destroy()
-            # Simple heuristic: check if background is dark
-            dark_bgs = ["#212121", "#1e1e1e", "#2b2b2b", "#1f1f1f"]
-            is_dark = any(bg.lower() == dbg.lower() for dbg in dark_bgs) or (len(bg) == 7 and bg[0] == "#" and int(bg[1:3], 16) < 0x40)
-        except:
-            is_dark = False
-    
+    """Configure text tags for syntax highlighting using dark theme colors."""
     # Use user-defined colors from settings
     colors = app.settings.colors
     
@@ -42,14 +21,14 @@ def configure_text_tags(app: 'App'):
     app.txt.tag_configure("prop", foreground=colors["prop"])
     app.txt.tag_configure("block_header", foreground=colors["block_header"], font=("Consolas", 11, "bold"))
     
-    # Use theme-appropriate background/foreground
-    if is_dark:
-        bg = "#1e1e1e"
-        fg = "#d4d4d4"
-    else:
-        bg = "#FFFFFF"
-        fg = "#000000"
+    # Dark theme colors
+    bg = "#1e1e1e"
+    fg = "#d4d4d4"
+    # Distinctive color for edited lines (more visible than hover)
+    # Using a subtle blue-green tint to distinguish from hover (gray) and highlight (yellow/orange)
+    edited_bg = "#2a3a3a"  # Dark teal/green tint
     
+    app.txt.tag_configure("edited_line", background=edited_bg)
     app.txt.config(bg=bg, fg=fg, insertbackground=fg)
 
 
@@ -73,6 +52,23 @@ def apply_syntax_highlighting(app: 'App'):
         app._update_line_numbers()
 
 
+def _is_binary_file(path: Path) -> bool:
+    """Check if a file is likely binary."""
+    try:
+        with open(path, 'rb') as f:
+            chunk = f.read(8192)  # Read first 8KB
+            if b'\x00' in chunk:  # Null bytes indicate binary
+                return True
+            # Check for common binary file signatures
+            if chunk.startswith((b'\x89PNG', b'\xff\xd8\xff', b'GIF8', b'BM', b'PK\x03\x04')):
+                return True
+            # Try to decode as text
+            chunk.decode('utf-8', errors='strict')
+            return False
+    except (UnicodeDecodeError, Exception):
+        return True
+
+
 def on_tree_select_path(app: 'App', path: Path):
     """Handle file selection from tree."""
     app.current_file = path
@@ -82,23 +78,99 @@ def on_tree_select_path(app: 'App', path: Path):
         label = shorten_path(relative_path, max_length=60)
     else:
         label = path.name
-    app.preview_label.configure(text=f"File Preview: {label}")
+    
+    # Count edits for this file
+    file_edits = [e for e in app.active_edits.values() if Path(e.file_path) == path]
+    edit_count = len(file_edits)
+    
+    # Get file stats
     try:
-        content = path.read_text(encoding="utf-8", errors="ignore")
+        file_size = path.stat().st_size
+        if file_size < 1024:
+            size_str = f"{file_size:,} bytes"
+        elif file_size < 1024 * 1024:
+            size_str = f"{file_size / 1024:.1f} KB"
+        else:
+            size_str = f"{file_size / (1024 * 1024):.1f} MB"
+    except:
+        size_str = "Unknown"
+    
+    # Check if file is binary
+    is_binary = _is_binary_file(path)
+    
+    # Build enhanced label with file info
+    file_ext = path.suffix.upper() if path.suffix else "NO EXT"
+    if edit_count > 0:
+        info_text = f"{label} • {file_ext} • {size_str} • {edit_count} edit{'s' if edit_count != 1 else ''}"
+    else:
+        info_text = f"{label} • {file_ext} • {size_str}"
+    
+    app.preview_label.configure(text=f"File Preview: {info_text}")
+    
+    # Handle binary files
+    if is_binary:
+        app.txt.config(state="normal")
+        app.txt.delete("1.0", "end")
+        app.txt.insert("1.0", f"[Binary File - Cannot Preview]\n\n"
+                              f"File: {path.name}\n"
+                              f"Size: {size_str}\n"
+                              f"Type: Binary file (not text-based)\n\n"
+                              f"This file cannot be displayed as text. Binary files like images, "
+                              f"compressed archives, or compiled data are not editable in PakBeast.")
+        app.txt.tag_remove("highlight", "1.0", "end")
+        app.txt.tag_remove("hover", "1.0", "end")
+        app.txt.tag_remove("edited_line", "1.0", "end")
+        app.txt.config(state="disabled")
+        if hasattr(app, '_update_line_numbers'):
+            app._update_line_numbers()
+        return
+    
+    # Handle text files
+    MAX_PREVIEW_SIZE = 5 * 1024 * 1024  # 5MB limit for preview
+    try:
+        if file_size > MAX_PREVIEW_SIZE:
+            # For very large files, only read first portion
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(MAX_PREVIEW_SIZE)
+            content += f"\n\n[File truncated - showing first {MAX_PREVIEW_SIZE / (1024*1024):.1f} MB of {file_size / (1024*1024):.1f} MB total]\n"
+            line_count = len(content.splitlines())
+        else:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            line_count = len(content.splitlines())
     except Exception as e:
-        content = f"<Error reading file: {e}>"
+        content = f"[Error reading file]\n\nFile: {path.name}\nError: {str(e)}\n\n"
+        content += "This file could not be read. It may be corrupted, locked, or in an unsupported format."
+        line_count = 0
     
     app.txt.config(state="normal")
     app.txt.delete("1.0", "end")
     app.txt.insert("1.0", content)
     app.txt.tag_remove("highlight", "1.0", "end")
     app.txt.tag_remove("hover", "1.0", "end")
+    app.txt.tag_remove("edited_line", "1.0", "end")
+    
+    # Highlight lines with edits
+    if file_edits:
+        for edit in file_edits:
+            if edit.is_enabled:
+                start_line = edit.line_number + 1
+                end_line = edit.end_line_number + 1
+                app.txt.tag_add("edited_line", f"{start_line}.0", f"{end_line}.end")
+    
     apply_syntax_highlighting(app)
     app.txt.config(state="disabled")
     
     # Update line numbers
     if hasattr(app, '_update_line_numbers'):
         app._update_line_numbers()
+    
+    # Update header with line count
+    if line_count > 0:
+        if edit_count > 0:
+            info_text = f"{label} • {file_ext} • {size_str} • {line_count:,} lines • {edit_count} edit{'s' if edit_count != 1 else ''}"
+        else:
+            info_text = f"{label} • {file_ext} • {size_str} • {line_count:,} lines"
+        app.preview_label.configure(text=f"File Preview: {info_text}")
 
 
 def find_context_name(app: 'App', target_line: int) -> Optional[str]:
@@ -107,6 +179,68 @@ def find_context_name(app: 'App', target_line: int) -> Optional[str]:
     lines = app.txt.get("1.0", "end-1c").splitlines()
     app.txt.config(state="disabled")
     return _find_block_context_name(target_line, lines)
+
+
+def refresh_edited_lines(app: 'App'):
+    """Refresh the edited line highlighting in the preview."""
+    if not app.current_file:
+        return
+    
+    app.txt.config(state="normal")
+    app.txt.tag_remove("edited_line", "1.0", "end")
+    
+    # Highlight lines with edits for the current file
+    file_edits = [e for e in app.active_edits.values() if Path(e.file_path) == app.current_file and e.is_enabled]
+    for edit in file_edits:
+        start_line = edit.line_number + 1
+        end_line = edit.end_line_number + 1
+        app.txt.tag_add("edited_line", f"{start_line}.0", f"{end_line}.end")
+    
+    app.txt.config(state="disabled")
+    
+    # Update header with edit count and file info
+    if app.temp_root:
+        relative_path = app.current_file.relative_to(app.temp_root)
+        from ui.utils import shorten_path
+        label = shorten_path(relative_path, max_length=60)
+    else:
+        label = app.current_file.name
+    
+    edit_count = len(file_edits)
+    file_ext = app.current_file.suffix.upper() if app.current_file.suffix else "NO EXT"
+    
+    try:
+        file_size = app.current_file.stat().st_size
+        if file_size < 1024:
+            size_str = f"{file_size:,} bytes"
+        elif file_size < 1024 * 1024:
+            size_str = f"{file_size / 1024:.1f} KB"
+        else:
+            size_str = f"{file_size / (1024 * 1024):.1f} MB"
+    except:
+        size_str = "Unknown"
+    
+    # Get line count from current content
+    try:
+        content = app.txt.get("1.0", "end-1c")
+        line_count = len([l for l in content.splitlines() if l.strip() and not l.startswith("[")])
+        if line_count > 0:
+            if edit_count > 0:
+                info_text = f"{label} • {file_ext} • {size_str} • {line_count:,} lines • {edit_count} edit{'s' if edit_count != 1 else ''}"
+            else:
+                info_text = f"{label} • {file_ext} • {size_str} • {line_count:,} lines"
+        else:
+            if edit_count > 0:
+                info_text = f"{label} • {file_ext} • {size_str} • {edit_count} edit{'s' if edit_count != 1 else ''}"
+            else:
+                info_text = f"{label} • {file_ext} • {size_str}"
+    except:
+        if edit_count > 0:
+            info_text = f"{label} • {file_ext} • {size_str} • {edit_count} edit{'s' if edit_count != 1 else ''}"
+        else:
+            info_text = f"{label} • {file_ext} • {size_str}"
+    
+    app.preview_label.configure(text=f"File Preview: {info_text}")
 
 
 def show_edit_in_preview(app: 'App', edit: ModEdit):
@@ -121,6 +255,7 @@ def show_edit_in_preview(app: 'App', edit: ModEdit):
         start, end = f"{edit.line_number + 1}.0", f"{edit.end_line_number + 1}.end"
         app.txt.see(start)
         app.txt.tag_add("highlight", start, end)
+        refresh_edited_lines(app)  # Refresh edited line indicators
         app.txt.config(state="disabled")
 
     if app.current_file != file_path:

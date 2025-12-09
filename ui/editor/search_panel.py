@@ -61,8 +61,8 @@ def build_search_panel(app: "App", parent) -> None:
 
     results_hint = ctk.CTkLabel(
         hint_frame,
-        text="💡 Tip: Click a result to preview • Double-click to add to modifications",
-        font=ctk.CTkFont(size=10),
+        text="💡 Single-click to preview • Double-click to add modification",
+        font=ctk.CTkFont(size=11),
         text_color=("gray30", "gray80"),
         anchor="w",
         justify="left",

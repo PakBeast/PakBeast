@@ -84,6 +84,14 @@ def cleanup_temp(app: 'App') -> None:
     app.txt.delete("1.0", "end")
     app.txt.config(state="disabled")
     app.preview_label.configure(text="File Preview: —")
+    # Clear line numbers
+    if hasattr(app, 'line_numbers'):
+        app.line_numbers.config(state="normal")
+        app.line_numbers.delete("1.0", "end")
+        app.line_numbers.config(state="disabled")
+    # Update line numbers to reflect empty state
+    if hasattr(app, '_update_line_numbers'):
+        app._update_line_numbers()
     app.search_results.clear()
     app.lst_results.delete(0, "end")
     app.active_edits.clear()
@@ -145,7 +153,7 @@ def populate_tree(app: 'App', root: Path) -> None:
 
 
 def save_project(app: 'App') -> None:
-    """Save the current project to a .dl3mod file."""
+    """Save the current project to a .pbm file."""
     if not app.temp_root:
         messagebox.showwarning(
             APP_NAME,
@@ -155,8 +163,8 @@ def save_project(app: 'App') -> None:
         return
     p = filedialog.asksaveasfilename(
         initialdir=app.settings.last_project_dir,
-        defaultextension=".dl3mod",
-        filetypes=[("Project File", "*.dl3mod"), ("All files", "*.*")]
+        defaultextension=".pbm",
+        filetypes=[("PakBeast Project", "*.pbm"), ("All files", "*.*")]
     )
     if not p:
         return
@@ -199,7 +207,7 @@ def save_project(app: 'App') -> None:
 
 
 def load_project(app: 'App') -> None:
-    """Load a project from a .dl3mod file."""
+    """Load a project from a .pbm file."""
     if app.project_is_dirty and not messagebox.askyesno(
         "Load Project",
         "You have unsaved changes that will be lost.\n\n"
@@ -208,7 +216,7 @@ def load_project(app: 'App') -> None:
         return
     p = filedialog.askopenfilename(
         initialdir=app.settings.last_project_dir,
-        filetypes=[("Project File", "*.dl3mod"), ("All files", "*.*")]
+        filetypes=[("PakBeast Project", "*.pbm"), ("All files", "*.*")]
     )
     if not p:
         return
@@ -222,7 +230,7 @@ def load_project(app: 'App') -> None:
             APP_NAME,
             "Invalid project file.\n\n"
             "The selected file does not appear to be a valid PakBeast project file.\n"
-            "Please select a file with the .dl3mod extension."
+            "Please select a file with the .pbm extension."
         )
         return
     if not app.temp_root:

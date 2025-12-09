@@ -157,7 +157,7 @@ def build_help_tab(app: 'App', parent):
     
     tips = [
         "Use Parameter Search to find values across .scr files",
-        "Click results to preview, double-click to add modifications",
+        "Single-click results to preview, double-click to add modifications",
         "Save projects frequently",
         "Build mod to create .pak file"
     ]

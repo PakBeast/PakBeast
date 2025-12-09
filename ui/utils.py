@@ -88,12 +88,8 @@ def get_listbox_colors() -> tuple[str, str, str]:
 
 
 def get_preview_colors() -> tuple[str, str, str]:
-    """Get preview text widget colors based on current theme."""
-    is_dark = is_dark_mode()
-    if is_dark:
-        return "#1e1e1e", "#d4d4d4", "#2d2d30"  # bg, fg, highlight_bg
-    else:
-        return "#FFFFFF", "#000000", "#e8e8e8"  # bg, fg, highlight_bg
+    """Get preview text widget colors for dark theme."""
+    return "#1e1e1e", "#d4d4d4", "#3d4a2d"  # bg, fg, highlight_bg (darker yellow/green for selected edit)
 
 
 _ICON_PHOTO = None

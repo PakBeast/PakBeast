@@ -4,7 +4,7 @@ import customtkinter as ctk
 import tkinter as tk
 from typing import TYPE_CHECKING
 
-from ..utils import get_preview_colors, is_dark_mode
+from ..utils import get_preview_colors
 
 if TYPE_CHECKING:
     from core.app import App
@@ -26,7 +26,6 @@ def build_preview_panel(app: "App", parent) -> None:
     preview_container.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
     bg_color, fg_color, highlight_bg = get_preview_colors()
-    dark_mode = is_dark_mode()
 
     text_frame = tk.Frame(preview_container, bg=bg_color)
     text_frame.pack(side="left", fill="both", expand=True)
@@ -68,9 +67,13 @@ def build_preview_panel(app: "App", parent) -> None:
     )
     app.txt.pack(side="left", fill="both", expand=True)
 
-    hover_bg = "#2d2d30" if dark_mode else "#e8e8e8"
+    # Dark theme highlight colors - distinct from each other
+    hover_bg = "#2d2d30"  # Gray - for mouse hover over a line
+    edited_line_bg = "#2a3a3a"  # Dark teal/green - for lines that have edits (persistent)
+    
     app.txt.tag_configure("hover", background=hover_bg)
-    app.txt.tag_configure("highlight", background=highlight_bg)
+    app.txt.tag_configure("highlight", background=highlight_bg)  # Dark yellow/green - when you click an edit in the list
+    app.txt.tag_configure("edited_line", background=edited_line_bg)
 
     def on_mouse_motion(event):
         try:
@@ -106,13 +109,13 @@ def build_preview_panel(app: "App", parent) -> None:
             line_count = len(content.splitlines())
             if content and not content.endswith("\n"):
                 line_count += 1
-            if line_count == 0:
-                line_count = 1
 
             app.line_numbers.config(state="normal")
             app.line_numbers.delete("1.0", "end")
-            for i in range(1, line_count + 1):
-                app.line_numbers.insert("end", f"{i}\n")
+            # Only show line numbers if there's content
+            if line_count > 0:
+                for i in range(1, line_count + 1):
+                    app.line_numbers.insert("end", f"{i}\n")
             app.line_numbers.config(state="disabled")
 
             try:

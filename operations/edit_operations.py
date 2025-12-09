@@ -52,7 +52,7 @@ def get_filtered_and_sorted_edits(app: 'App') -> List[ModEdit]:
 
 
 def refresh_edits_list(app: 'App') -> None:
-    """Refresh the edits list display."""
+    """Refresh the edits list display and update preview highlighting."""
     app.lst_edits.delete(0, "end")
     
     # Update file filter options
@@ -108,6 +108,11 @@ def refresh_edits_list(app: 'App') -> None:
                 shown = f"{chk}  {ed.param_name}: {original_val} {change_indicator} {current_val}"
         
         app.lst_edits.insert("end", shown)
+    
+    # Refresh preview highlighting for edited lines
+    if hasattr(app, 'current_file') and app.current_file:
+        from .preview_handler import refresh_edited_lines
+        refresh_edited_lines(app)
 
 
 def selected_edit(app: 'App') -> Optional[ModEdit]:

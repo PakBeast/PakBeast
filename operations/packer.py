@@ -50,16 +50,24 @@ def _run_packing_in_background(app: 'App', out_path: str):
         # 1. Process multi-pack files
         for pak_path_str in app.settings.multi_pack_files:
             pak_path = Path(pak_path_str)
-            if pak_path.exists():
+            if not pak_path.exists():
+                print(f"WARNING: Multi-pack file not found: {pak_path_str}")
+                continue
+            try:
                 with zipfile.ZipFile(pak_path, 'r') as zf:
                     for member in zf.infolist():
-                        if member.is_dir(): continue
+                        # Skip directories (zipfile directories end with '/')
+                        if member.filename.endswith('/'):
+                            continue
                         target_path = staging_dir / member.filename
                         if target_path.exists() and not app.settings.multi_pack_overwrite:
                             continue # Keep existing file, do not overwrite
                         target_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(target_path, 'wb') as f:
                             f.write(zf.read(member))
+            except Exception as e:
+                print(f"ERROR: Failed to process multi-pack file {pak_path_str}: {e}")
+                # Continue with other pak files even if one fails
 
         # 2. Apply this mod's edits
         edits_by_file: Dict[str, List[ModEdit]] = {}
@@ -70,7 +78,12 @@ def _run_packing_in_background(app: 'App', out_path: str):
 
         for fpath, edits in edits_by_file.items():
             p = Path(fpath)
-            rel_path_str = str(p.relative_to(app.temp_root)) if app.temp_root and p.is_relative_to(app.temp_root) else p.name
+            if app.temp_root and p.is_relative_to(app.temp_root):
+                # Get relative path and normalize to forward slashes (zipfile format)
+                rel_path = p.relative_to(app.temp_root)
+                rel_path_str = str(rel_path).replace(os.sep, "/")
+            else:
+                rel_path_str = p.name
             staging_file_path = staging_dir / rel_path_str
             
             if staging_file_path.exists():
