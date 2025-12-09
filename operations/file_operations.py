@@ -164,27 +164,38 @@ def save_project(app: 'App') -> None:
     app.settings.save()
     edit_count = len(app.active_edits)
     app._show_progress(f"Saving project with {edit_count} edit(s)...")
-    payload = {
-        "edits": [
-            {
-                **ed.__dict__,
-                "file_path": str(Path(ed.file_path).relative_to(app.temp_root))
-            }
-            for ed in app.active_edits.values()
-        ]
-    }
-    write_json(Path(p), payload)
-    app.project_is_dirty = False
-    app._hide_progress()
-    if hasattr(app, '_update_status'):
-        app._update_status(f"Project saved: {Path(p).name}", "#4CAF50")  # Green
-    else:
-        app.status.set(f"Project saved: {Path(p).name}")
-        messagebox.showinfo(
+    try:
+        payload = {
+            "edits": [
+                {
+                    **ed.__dict__,
+                    "file_path": str(Path(ed.file_path).relative_to(app.temp_root))
+                }
+                for ed in app.active_edits.values()
+            ]
+        }
+        write_json(Path(p), payload)
+        app._hide_progress()
+        if hasattr(app, '_update_status'):
+            app._update_status(f"Project saved: {Path(p).name}", "#4CAF50")  # Green
+        else:
+            app.status.set(f"Project saved: {Path(p).name}")
+            messagebox.showinfo(
+                APP_NAME,
+                "Project saved successfully.\n\n"
+                "Your modifications have been saved and can be loaded later."
+            )
+        # Set to False at the very end after all UI updates to ensure nothing resets it
+        app.project_is_dirty = False
+    except Exception as e:
+        app._hide_progress()
+        messagebox.showerror(
             APP_NAME,
-            "Project saved successfully.\n\n"
-            "Your modifications have been saved and can be loaded later."
+            f"Failed to save project.\n\n"
+            f"Error: {e}\n\n"
+            f"Your changes have not been saved."
         )
+        # Keep project_is_dirty as True since save failed
 
 
 def load_project(app: 'App') -> None:

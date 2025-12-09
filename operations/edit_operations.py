@@ -140,7 +140,8 @@ def delete_selected_edit(app: 'App'):
     """Delete selected edit."""
     if ed := selected_edit(app):
         del app.active_edits[ed.key()]
-        app.project_is_dirty = True
+        # If no edits remain, project is no longer dirty
+        app.project_is_dirty = len(app.active_edits) > 0
         refresh_edits_list(app)
 
 
@@ -153,7 +154,8 @@ def clear_edits(app: 'App'):
         "This action cannot be undone."
     ):
         app.active_edits.clear()
-        app.project_is_dirty = True
+        # No edits means nothing unsaved
+        app.project_is_dirty = False
         refresh_edits_list(app)
 
 

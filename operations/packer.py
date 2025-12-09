@@ -7,13 +7,21 @@ import threading
 import zipfile
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
     from core.app import App
     from core.models import ModEdit
 
 from core.constants import APP_NAME, PARAM_RE, PROP_RE
+
+
+class PackingWarning:
+    """Simple class to represent warnings during packing (not errors)."""
+    def __init__(self, message: str):
+        self.message = message
+    def __str__(self):
+        return self.message
 
 
 def pack_pak(app: 'App') -> None:
@@ -55,6 +63,7 @@ def _run_packing_in_background(app: 'App', out_path: str):
 
         # 2. Apply this mod's edits
         edits_by_file: Dict[str, List[ModEdit]] = {}
+        failed_edits: List[str] = []
         for ed in app.active_edits.values():
             if ed.is_enabled:
                 edits_by_file.setdefault(ed.file_path, []).append(ed)
@@ -89,14 +98,45 @@ def _run_packing_in_background(app: 'App', out_path: str):
                     modified_lines[e.line_number] = e.current_value + ending
                 elif e.edit_type == 'VALUE_REPLACE':
                     orig = modified_lines[e.line_number]
+                    applied = False
                     if (m := PARAM_RE.search(orig)) and e.param_name == m.group(1):
                         # Robustly replace the value, preserving original whitespace
                         value_span = m.span(2)
                         modified_lines[e.line_number] = orig[:value_span[0]] + e.current_value + orig[value_span[1]:]
+                        applied = True
                     elif (pm := PROP_RE.search(orig)) and pm.group(1) == e.param_name:
                         # Robustly replace the value for properties, preserving original whitespace
                         value_span = pm.span(2)
                         modified_lines[e.line_number] = orig[:value_span[0]] + e.current_value + orig[value_span[1]:]
+                        applied = True
+                    
+                    if not applied:
+                        # Log warning if edit couldn't be applied - this helps users debug issues
+                        file_name = Path(fpath).name
+                        warning_msg = f"Could not apply edit for '{e.param_name}' on line {e.line_number + 1} of {file_name}"
+                        print(f"WARNING: {warning_msg}")
+                        print(f"  Line content: {orig.strip()}")
+                        print(f"  Expected param name: {e.param_name}")
+                        print(f"  Expected value: {e.current_value}")
+                        failed_edits.append(f"{file_name}:{e.line_number + 1} ({e.param_name})")
+                        
+                        # Try to still apply if we can find the param name even if regex doesn't match perfectly
+                        # This handles edge cases where the line format might be slightly different
+                        if e.param_name in orig:
+                            # Fallback: try a simple string replacement if param name exists
+                            # Find the param and replace its value more carefully
+                            param_pattern = f'Param("{e.param_name}",'
+                            if param_pattern in orig:
+                                # Try to find and replace just the value part
+                                import re as re_module
+                                fallback_pattern = re_module.compile(
+                                    rf'Param\("{re_module.escape(e.param_name)}",\s*("[^"]+"|\S+)'
+                                )
+                                if fallback_match := fallback_pattern.search(orig):
+                                    fallback_span = fallback_match.span(2)
+                                    modified_lines[e.line_number] = orig[:fallback_span[0]] + e.current_value + orig[fallback_span[1]:]
+                                    applied = True
+                                    print(f"  ✓ Applied using fallback method")
 
             final_content = "".join(modified_lines)
             staging_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,33 +151,53 @@ def _run_packing_in_background(app: 'App', out_path: str):
                     zf.write(file_path, str(archive_path).replace(os.sep, "/"))
 
         shutil.rmtree(staging_dir)
-        app.after(0, _packing_finished, app, out_path, None)
+        # Pass failed edits info to the completion handler
+        warning = None
+        if failed_edits:
+            warning = PackingWarning(f"Some edits could not be applied:\n" + "\n".join(f"  - {fe}" for fe in failed_edits))
+        app.after(0, _packing_finished, app, out_path, warning)
     except Exception as e:
         if 'staging_dir' in locals() and staging_dir.exists():
             shutil.rmtree(staging_dir)
         app.after(0, _packing_finished, app, out_path, e)
 
 
-def _packing_finished(app: 'App', out_path, error):
+def _packing_finished(app: 'App', out_path, error: Optional[Exception]):
     """Handle packing completion."""
     app._hide_progress()
     if error:
-        if hasattr(app, '_update_status'):
-            app._update_status(f"Packing failed: {error}", "#F44336")  # Red
+        if isinstance(error, PackingWarning):
+            # It's a warning about failed edits - show warning but don't fail completely
+            if hasattr(app, '_update_status'):
+                app._update_status(f"Packed with warnings: {Path(out_path).name}", "#FF9800")  # Orange
+            else:
+                app.status.set(f"Packed with warnings: {Path(out_path).name}")
+            messagebox.showwarning(
+                APP_NAME,
+                f"Mod package compiled with warnings.\n\n"
+                f"{error}\n\n"
+                f"Please check the console output for details. The mod may not have all intended changes applied."
+            )
         else:
-            app.status.set(f"Packing failed: {error}")
-        messagebox.showerror(
-            APP_NAME,
-            f"Mod compilation failed.\n\n"
-            f"Error details: {error}\n\n"
-            f"Please check the file paths and try again."
-        )
+            # It's a real exception/error
+            if hasattr(app, '_update_status'):
+                app._update_status(f"Packing failed: {error}", "#F44336")  # Red
+            else:
+                app.status.set(f"Packing failed: {error}")
+            messagebox.showerror(
+                APP_NAME,
+                f"Mod compilation failed.\n\n"
+                f"Error details: {error}\n\n"
+                f"Please check the file paths and try again."
+            )
     else:
         out_name = Path(out_path).name
         if hasattr(app, '_update_status'):
             app._update_status(f"Packed mod: {out_name}", "#4CAF50")  # Green
         else:
             app.status.set(f"Packed mod: {out_name}")
+        # Clear dirty flag after successful packing since mod has been exported
+        app.project_is_dirty = False
         messagebox.showinfo(
             APP_NAME,
             f"Mod package compiled successfully.\n\n"
