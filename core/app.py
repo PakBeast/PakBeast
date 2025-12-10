@@ -66,6 +66,7 @@ class App(ctk.CTk):
         # Application state
         self.temp_root: Optional[Path] = None
         self.current_file: Optional[Path] = None
+        self.current_pak_path: Optional[Path] = None
         self.search_results: List[ModEdit] = []
         self.active_edits: Dict[Tuple[str, int, int], ModEdit] = {}
         self.project_is_dirty = False

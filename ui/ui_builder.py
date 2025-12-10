@@ -10,6 +10,7 @@ from .toolbar import build_toolbar
 from .editor_tab import build_editor_tab
 from .settings_tabs import build_general_settings_tab, build_multi_packer_tab, build_colors_tab
 from .help_tab import build_help_tab
+from .diff_tab import build_diff_tab
 
 
 def build_ui(app: 'App') -> None:
@@ -29,19 +30,23 @@ def build_ui(app: 'App') -> None:
     editor_tab = main_tabs.add("Editor")
     build_editor_tab(app, editor_tab)
     
-    # Tab 2: General Settings
+    # Tab 2: Diff (adjacent to Editor for quick access)
+    diff_tab = main_tabs.add("Diff")
+    build_diff_tab(app, diff_tab)
+    
+    # Tab 3: General Settings
     general_tab = main_tabs.add("General Settings")
     build_general_settings_tab(app, general_tab)
     
-    # Tab 3: Multi-Packer
+    # Tab 4: Multi-Packer
     packer_tab = main_tabs.add("Multi-Packer")
     build_multi_packer_tab(app, packer_tab)
     
-    # Tab 4: Colors
+    # Tab 5: Colors
     colors_tab = main_tabs.add("Colors")
     build_colors_tab(app, colors_tab)
     
-    # Tab 5: Help
+    # Tab 6: Help
     help_tab = main_tabs.add("Help")
     build_help_tab(app, help_tab)
     

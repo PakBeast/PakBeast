@@ -28,6 +28,7 @@ def load_pak(app: 'App') -> None:
     app.settings.last_pak_dir = str(Path(p).parent)
     app.settings.save()
     cleanup_temp(app)
+    app.current_pak_path = Path(p)
     pak_name = Path(p).name
     app._show_progress(f"Loading {pak_name}...")
     threading.Thread(target=_extract_and_populate, args=(app, p)).start()
@@ -102,6 +103,7 @@ def cleanup_temp(app: 'App') -> None:
         shutil.rmtree(app.temp_root, ignore_errors=True)
     app.temp_root = None
     app.current_file = None
+    app.current_pak_path = None
 
 
 def populate_tree(app: 'App', root: Path) -> None:
