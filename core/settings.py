@@ -36,6 +36,7 @@ class Settings:
         home_dir = str(Path.home())
         self.last_pak_dir: str = data.get("last_pak_dir", home_dir)
         self.last_project_dir: str = data.get("last_project_dir", home_dir)
+        self.last_export_dir: str = data.get("last_export_dir", home_dir)
         self.multi_pack_files: List[str] = data.get("multi_pack_files", [])
         self.multi_pack_overwrite: bool = data.get("multi_pack_overwrite", True)
         
@@ -59,6 +60,7 @@ class Settings:
         write_json(CONFIG_PATH, {
             "last_pak_dir": self.last_pak_dir,
             "last_project_dir": self.last_project_dir,
+            "last_export_dir": self.last_export_dir,
             "multi_pack_files": self.multi_pack_files,
             "multi_pack_overwrite": self.multi_pack_overwrite,
             "colors": self.colors,

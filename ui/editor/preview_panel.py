@@ -21,6 +21,18 @@ def build_preview_panel(app: "App", parent) -> None:
         font=ctk.CTkFont(size=13, weight="bold"),
     )
     app.preview_label.pack(side="left")
+    
+    # Export as TXT button
+    export_btn = ctk.CTkButton(
+        preview_header,
+        text="Export as TXT",
+        width=100,
+        height=28,
+        font=ctk.CTkFont(size=11),
+        command=app._export_file_as_txt,
+        corner_radius=4
+    )
+    export_btn.pack(side="right")
 
     preview_container = ctk.CTkFrame(parent, fg_color="transparent")
     preview_container.pack(fill="both", expand=True, padx=10, pady=(0, 8))
@@ -97,7 +109,8 @@ def build_preview_panel(app: "App", parent) -> None:
     def prevent_selection(_event):
         return "break"
 
-    app.txt.bind("<Button-1>", prevent_selection)
+    # Don't prevent Button-1 to allow double-click to work
+    # Selection is already disabled via exportselection=False
     app.txt.bind("<B1-Motion>", prevent_selection)
     app.txt.bind("<ButtonRelease-1>", prevent_selection)
     app.txt.bind("<Shift-Button-1>", prevent_selection)

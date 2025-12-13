@@ -86,10 +86,78 @@ def _run_packing_in_background(app: 'App', out_path: str):
                 rel_path_str = p.name
             staging_file_path = staging_dir / rel_path_str
             
+            # Track if we formatted JSON (so we can minify it back)
+            was_json_formatted = False
+            
+            # Read from staging directory if it exists (from multi-pack files),
+            # otherwise read from the ORIGINAL .pak file to avoid double-applying edits
             if staging_file_path.exists():
                 modified_lines = staging_file_path.read_text(encoding="utf-8", errors="ignore").splitlines(True)
             else:
-                modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                # Read from original .pak file to get unmodified content, then apply edits fresh
+                # This avoids double-applying edits if the user saved the file
+                if app.current_pak_path and app.temp_root and p.is_relative_to(app.temp_root):
+                    rel_path = p.relative_to(app.temp_root)
+                    rel_path_str = str(rel_path).replace(os.sep, "/")
+                    try:
+                        with zipfile.ZipFile(app.current_pak_path, 'r') as zf:
+                            if rel_path_str in zf.namelist():
+                                # Read original file from .pak archive
+                                original_content = zf.read(rel_path_str).decode('utf-8', errors='ignore')
+                                
+                                # Check if this is a JSON file (minified) - format it like the preview does
+                                # This ensures line numbers match what the user sees in the preview
+                                import json
+                                content_stripped = original_content.strip()
+                                is_json_like = (p.suffix.lower() == '.json' or 
+                                               p.suffix.lower() == '.gui' or
+                                               p.suffix.lower() == '' or
+                                               content_stripped.startswith('{') or 
+                                               content_stripped.startswith('['))
+                                
+                                if is_json_like:
+                                    try:
+                                        # Format JSON to match preview (adds newlines)
+                                        json_data = json.loads(original_content)
+                                        formatted_content = json.dumps(json_data, indent=2, ensure_ascii=False)
+                                        modified_lines = formatted_content.splitlines(True)
+                                        was_json_formatted = True
+                                    except (json.JSONDecodeError, ValueError):
+                                        # Not valid JSON, use as-is
+                                        modified_lines = original_content.splitlines(True)
+                                else:
+                                    # Use splitlines(True) to preserve line endings
+                                    modified_lines = original_content.splitlines(True)
+                                
+                                # If still only 1 line, try manual split as fallback
+                                if len(modified_lines) == 1 and ('\n' in original_content or '\r' in original_content):
+                                    if '\r\n' in original_content:
+                                        modified_lines = original_content.split('\r\n')
+                                        for i in range(len(modified_lines) - 1):
+                                            modified_lines[i] += '\r\n'
+                                    else:
+                                        modified_lines = original_content.split('\n')
+                                        for i in range(len(modified_lines) - 1):
+                                            modified_lines[i] += '\n'
+                            else:
+                                # Fallback to temp_root if not in .pak
+                                if not p.exists():
+                                    print(f"WARNING: File not found: {p}")
+                                    failed_edits.append(f"{Path(fpath).name}: File not found")
+                                    continue
+                                modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                    except Exception as pak_error:
+                        # Fallback to temp_root if .pak read fails
+                        if not p.exists():
+                            failed_edits.append(f"{Path(fpath).name}: File not found")
+                            continue
+                        modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                else:
+                    # Fallback to temp_root if no .pak path available
+                    if not p.exists():
+                        failed_edits.append(f"{Path(fpath).name}: File not found")
+                        continue
+                    modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
 
             edits.sort(key=lambda e: (e.line_number, e.insertion_index), reverse=True)
             for e in edits:
@@ -107,6 +175,8 @@ def _run_packing_in_background(app: 'App', out_path: str):
                         ending = '\r\n'
                     modified_lines.insert(e.line_number, e.current_value + ending)
                 elif e.edit_type == 'LINE_REPLACE':
+                    if e.line_number >= len(modified_lines):
+                        continue
                     ending = '\n' if not modified_lines[e.line_number].endswith('\r\n') else '\r\n'
                     modified_lines[e.line_number] = e.current_value + ending
                 elif e.edit_type == 'VALUE_REPLACE':
@@ -152,6 +222,19 @@ def _run_packing_in_background(app: 'App', out_path: str):
                                     print(f"  ✓ Applied using fallback method")
 
             final_content = "".join(modified_lines)
+            
+            # If this was a JSON file that we formatted, minify it back to match original format
+            # (games often expect minified JSON, and it's more efficient)
+            if was_json_formatted:
+                try:
+                    import json
+                    # Parse and minify back to original format (no spaces, compact)
+                    json_data = json.loads(final_content)
+                    final_content = json.dumps(json_data, separators=(',', ':'), ensure_ascii=False)
+                except (json.JSONDecodeError, ValueError):
+                    # If minification fails, keep formatted version
+                    pass
+            
             staging_file_path.parent.mkdir(parents=True, exist_ok=True)
             staging_file_path.write_text(final_content, encoding="utf-8")
         

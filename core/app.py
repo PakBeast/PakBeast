@@ -149,6 +149,9 @@ class App(ctk.CTk):
     def _load_project(self) -> None:
         file_operations.load_project(self)
     
+    def _export_file_as_txt(self) -> None:
+        file_operations.export_file_as_txt(self)
+    
     # File Tree Operations
     def _on_file_search_change(self, *args):
         file_tree.on_file_search_change(self, *args)

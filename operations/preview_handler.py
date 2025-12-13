@@ -1,5 +1,6 @@
 """Preview panel operations for displaying and highlighting file content."""
 
+import json
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -136,6 +137,20 @@ def on_tree_select_path(app: 'App', path: Path):
             line_count = len(content.splitlines())
         else:
             content = path.read_text(encoding="utf-8", errors="ignore")
+            # Try to format JSON files for better readability
+            # Check if content looks like JSON (starts with { or [) regardless of file extension
+            content_stripped = content.strip()
+            if (path.suffix.lower() == '.json' or 
+                path.suffix.lower() == '' or 
+                content_stripped.startswith('{') or 
+                content_stripped.startswith('[')):
+                try:
+                    # Attempt to parse and pretty-print JSON
+                    json_data = json.loads(content)
+                    content = json.dumps(json_data, indent=2, ensure_ascii=False)
+                except (json.JSONDecodeError, ValueError):
+                    # Not valid JSON or parsing failed, use original content
+                    pass
             line_count = len(content.splitlines())
     except Exception as e:
         content = f"[Error reading file]\n\nFile: {path.name}\nError: {str(e)}\n\n"
