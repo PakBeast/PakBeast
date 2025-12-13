@@ -34,6 +34,10 @@ def build_preview_panel(app: "App", parent) -> None:
     )
     export_btn.pack(side="right")
 
+    # Search functionality (placed below file preview label)
+    search_header = ctk.CTkFrame(parent, fg_color="transparent")
+    search_header.pack(fill="x", padx=10, pady=(0, 6))
+
     preview_container = ctk.CTkFrame(parent, fg_color="transparent")
     preview_container.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
@@ -42,10 +46,10 @@ def build_preview_panel(app: "App", parent) -> None:
     text_frame = tk.Frame(preview_container, bg=bg_color)
     text_frame.pack(side="left", fill="both", expand=True)
 
-    line_number_width = 4
+    # Start with a default width, will be adjusted dynamically
     app.line_numbers = tk.Text(
         text_frame,
-        width=line_number_width,
+        width=4,
         padx=4,
         pady=12,
         takefocus=0,
@@ -127,8 +131,19 @@ def build_preview_panel(app: "App", parent) -> None:
             app.line_numbers.delete("1.0", "end")
             # Only show line numbers if there's content
             if line_count > 0:
+                # Calculate width needed for line numbers (add 1 for padding)
+                # Use number of digits in the largest line number
+                max_line_digits = len(str(line_count))
+                # Set width to accommodate the largest line number + 1 for spacing
+                # Minimum width of 4, maximum reasonable width of 12
+                line_number_width = max(4, min(max_line_digits + 1, 12))
+                app.line_numbers.config(width=line_number_width)
+                
+                # Format line numbers with right alignment by padding
                 for i in range(1, line_count + 1):
-                    app.line_numbers.insert("end", f"{i}\n")
+                    # Right-align by padding with spaces
+                    line_num_str = f"{i:>{max_line_digits}}\n"
+                    app.line_numbers.insert("end", line_num_str)
             app.line_numbers.config(state="disabled")
 
             try:
@@ -164,4 +179,170 @@ def build_preview_panel(app: "App", parent) -> None:
 
     app.txt.bind("<Double-Button-1>", app._on_preview_double_click)
     app.txt.bind("<Button-3>", app._on_preview_right_click)
+    
+    # Setup search functionality (search_header already created above)
+    _setup_search_functionality(app, search_header, bg_color, fg_color)
+
+
+def _setup_search_functionality(app: "App", parent, bg_color, fg_color):
+    """Set up search functionality for the preview panel (always visible)."""
+    
+    # Search panel (placed below file preview path)
+    search_frame = ctk.CTkFrame(parent, fg_color="transparent")
+    search_frame.pack(fill="x")
+    
+    # Store search state
+    app._search_frame = search_frame
+    app._search_matches = []
+    app._current_match_index = -1
+    app._search_tag_name = "search_match"
+    app._search_current_tag_name = "search_current"
+    
+    # Configure search highlight tags
+    app.txt.tag_configure(app._search_tag_name, background="#FFD700", foreground="#000000")  # Yellow highlight
+    app.txt.tag_configure(app._search_current_tag_name, background="#FF6B00", foreground="#FFFFFF")  # Orange for current match
+    
+    # Search entry and controls (horizontal layout in header, between label and export button)
+    search_label = ctk.CTkLabel(
+        search_frame,
+        text="Search:",
+        font=ctk.CTkFont(size=11, weight="bold"),
+    )
+    search_label.pack(side="left", padx=(0, 6))
+    
+    search_var = ctk.StringVar(value="")
+    search_entry = ctk.CTkEntry(
+        search_frame,
+        textvariable=search_var,
+        placeholder_text="Type to search...",
+        width=250,
+        font=ctk.CTkFont(size=11),
+        height=28,
+    )
+    search_entry.pack(side="left", padx=(0, 6))
+    
+    # Case sensitive checkbox
+    case_sensitive_var = ctk.BooleanVar(value=False)
+    case_checkbox = ctk.CTkCheckBox(
+        search_frame,
+        text="Case",
+        variable=case_sensitive_var,
+        font=ctk.CTkFont(size=10),
+        width=50,
+        height=28,
+    )
+    case_checkbox.pack(side="left", padx=(0, 6))
+    
+    # Match count label
+    match_count_label = ctk.CTkLabel(
+        search_frame,
+        text="",
+        font=ctk.CTkFont(size=10),
+        text_color=("gray50", "gray70"),
+        width=60,
+    )
+    match_count_label.pack(side="left")
+    
+    
+    def perform_search(*args):
+        """Perform search and highlight matches."""
+        search_text = search_var.get()
+        case_sensitive = case_sensitive_var.get()
+        
+        # Clear previous highlights
+        app.txt.tag_remove(app._search_tag_name, "1.0", "end")
+        app.txt.tag_remove(app._search_current_tag_name, "1.0", "end")
+        app._search_matches = []
+        app._current_match_index = -1
+        
+        if not search_text:
+            match_count_label.configure(text="")
+            return
+        
+        # Use tkinter's built-in search method
+        start_pos = "1.0"
+        matches = []
+        
+        # Search options - if case_sensitive is False (unchecked), use case-insensitive search
+        search_options = []
+        if not case_sensitive:
+            search_options.append("-nocase")  # -nocase makes search case-insensitive
+        
+        while True:
+            # Search for the text (plain text search, not regex)
+            pos = app.txt.search(search_text, start_pos, "end", *search_options)
+            if not pos:
+                break
+            
+            # Calculate end position
+            end_pos = app.txt.index(f"{pos}+{len(search_text)}c")
+            
+            # Add highlight
+            app.txt.tag_add(app._search_tag_name, pos, end_pos)
+            matches.append((pos, end_pos))
+            
+            # Move start position for next search
+            start_pos = end_pos
+        
+        app._search_matches = matches
+        
+        # Update match count
+        match_count = len(app._search_matches)
+        if match_count == 0:
+            match_count_label.configure(text="No matches")
+        else:
+            # Show as "current/total" format
+            app._current_match_index = 0
+            match_count_label.configure(text=f"1/{match_count}")
+            _navigate_match(app, 0)
+    
+    def _navigate_match(app: "App", direction: int):
+        """Navigate to next/previous match."""
+        if not app._search_matches:
+            match_count_label.configure(text="No matches")
+            return
+        
+        # Remove current match highlight
+        app.txt.tag_remove(app._search_current_tag_name, "1.0", "end")
+        
+        # Update index
+        if direction == 0:
+            # Just highlight current without moving
+            app._current_match_index = 0
+        else:
+            # Navigate: 1 for next, -1 for previous
+            app._current_match_index = (app._current_match_index + direction) % len(app._search_matches)
+        
+        # Highlight current match
+        if 0 <= app._current_match_index < len(app._search_matches):
+            start_index, end_index = app._search_matches[app._current_match_index]
+            app.txt.tag_add(app._search_current_tag_name, start_index, end_index)
+            
+            # Scroll to make it visible
+            app.txt.see(start_index)
+            
+            # Update match count to show current position as "current/total"
+            match_count = len(app._search_matches)
+            current = app._current_match_index + 1
+            match_count_label.configure(text=f"{current}/{match_count}")
+    
+    # Bind search entry changes
+    search_var.trace_add("write", perform_search)
+    case_sensitive_var.trace_add("write", perform_search)
+    
+    # Bind Enter key to navigate to next match
+    search_entry.bind("<Return>", lambda e: _navigate_match(app, 1))
+    search_entry.bind("<Shift-Return>", lambda e: _navigate_match(app, -1))
+    
+    # Optional: Bind Ctrl+F to focus search entry (but panel is always visible)
+    def focus_search(event):
+        search_entry.focus_set()
+        search_entry.select_range(0, tk.END)
+        return "break"
+    
+    # Bind to the main window and text widget
+    app.bind_all("<Control-f>", focus_search)
+    app.bind_all("<Control-F>", focus_search)
+    app.txt.bind("<Control-f>", focus_search)
+    app.txt.bind("<Control-F>", focus_search)
 

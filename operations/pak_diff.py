@@ -46,6 +46,16 @@ def _decode_text(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _is_zip_file(path: Path) -> bool:
+    """Check if a file is a ZIP archive by reading its magic bytes."""
+    try:
+        with open(path, "rb") as f:
+            magic = f.read(4)
+            return magic[:2] == b"PK"  # ZIP files start with PK
+    except (IOError, OSError):
+        return False
+
+
 @dataclass
 class FileDiff:
     path: str
@@ -87,6 +97,10 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
     Extract paired changed lines from a unified diff string with line numbers.
     Only pairs consecutive -/+ lines within the same hunk to avoid false matches.
     Returns: List of (old_line, new_line, old_line_num, new_line_num)
+    
+    Note: Unified diff uses 1-based line numbers. The hunk header format is:
+    @@ -old_start,old_count +new_start,new_count @@
+    where old_start and new_start are the starting line numbers (1-based).
     """
     import re
     lines = diff_str.splitlines()
@@ -99,11 +113,27 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
     
     for line in lines:
         # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+        # old_start and new_start are 1-based line numbers
         if line.startswith("@@"):
             match = re.search(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
             if match:
-                old_line_num = int(match.group(1))
-                new_line_num = int(match.group(3))
+                # Reset line numbers to the starting line from the hunk header
+                # Note: unified diff uses 1-based line numbers
+                old_start = int(match.group(1))
+                new_start = int(match.group(3))
+                # Validate line numbers are reasonable (sanity check to catch parsing errors)
+                # Most files won't exceed 10 million lines, but we allow up to 100 million as a safety limit
+                if old_start > 0 and new_start > 0 and old_start <= 100000000 and new_start <= 100000000:
+                    old_line_num = old_start
+                    new_line_num = new_start
+                else:
+                    # Invalid line numbers (likely a parsing error), skip this hunk
+                    old_line_num = None
+                    new_line_num = None
+            else:
+                # If we can't parse the hunk header, reset to None
+                old_line_num = None
+                new_line_num = None
             # Reset state for new hunk
             last_was_minus = False
             last_minus_content = None
@@ -120,9 +150,11 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
         if line.startswith("-") and not line.startswith("--"):
             content = line[1:]
             if old_line_num is not None:
+                # Store the current line number before incrementing
                 last_minus_content = content
                 last_minus_line_num = old_line_num
                 last_was_minus = True
+                # Increment for the next line in the old file
                 old_line_num += 1
         # Check for + line (added/changed)
         elif line.startswith("+") and not line.startswith("++"):
@@ -130,6 +162,7 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
             if last_was_minus and last_minus_content is not None and last_minus_line_num is not None:
                 # Pair with the immediately preceding - line (same change)
                 if new_line_num is not None:
+                    # Use the current new_line_num before incrementing
                     changes.append((last_minus_content, content, last_minus_line_num, new_line_num))
                     new_line_num += 1
                 else:
@@ -140,6 +173,7 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
             else:
                 # Unpaired addition (new line added)
                 if new_line_num is not None:
+                    # Use the current new_line_num before incrementing
                     changes.append((None, content, None, new_line_num))
                     new_line_num += 1
                 else:
@@ -151,7 +185,8 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
                 last_was_minus = False
                 last_minus_content = None
                 last_minus_line_num = None
-            # Increment both line counters for context
+            # Increment both line counters for context lines
+            # Context lines exist in both old and new files
             if old_line_num is not None:
                 old_line_num += 1
             if new_line_num is not None:
@@ -162,6 +197,88 @@ def _extract_changed_lines(diff_str: str) -> List[tuple[str | None, str | None, 
         changes.append((last_minus_content, None, last_minus_line_num, None))
     
     return changes
+
+
+def diff_plain_text_files(
+    original_path: Path,
+    modded_path: Path,
+    context: int,
+    include_diff: bool = True,
+    max_text_bytes: int = 1_000_000,
+) -> List[FileDiff]:
+    """Compute differences between two plain text files."""
+    diffs: List[FileDiff] = []
+    
+    # Read both files
+    try:
+        with open(original_path, "rb") as f:
+            orig_bytes = f.read()
+    except (IOError, OSError):
+        return diffs  # File doesn't exist or can't be read
+    
+    try:
+        with open(modded_path, "rb") as f:
+            mod_bytes = f.read()
+    except (IOError, OSError):
+        # Modded file doesn't exist - treat as removed
+        if _is_text(orig_bytes):
+            orig_text = _decode_text(orig_bytes).splitlines()
+            diffs.append(FileDiff(
+                path=original_path.name,
+                kind="removed",
+                diff=None,
+            ))
+        return diffs
+    
+    # If files are identical, return empty list
+    if orig_bytes == mod_bytes:
+        return diffs
+    
+    orig_is_text = _is_text(orig_bytes)
+    mod_is_text = _is_text(mod_bytes)
+    
+    if orig_is_text and mod_is_text:
+        orig_text = _decode_text(orig_bytes).splitlines()
+        mod_text = _decode_text(mod_bytes).splitlines()
+        # Param-level summary
+        orig_params = _parse_params(orig_text)
+        mod_params = _parse_params(mod_text)
+        param_changes: List[tuple[str, str, str]] = []
+        for name, old_val in orig_params.items():
+            if name in mod_params and mod_params[name] != old_val:
+                param_changes.append((name, old_val, mod_params[name]))
+        
+        diff_str = None
+        diff_truncated = False
+        changed_lines = None
+        if include_diff:
+            if len(orig_bytes) <= max_text_bytes and len(mod_bytes) <= max_text_bytes:
+                diff_lines = difflib.unified_diff(
+                    orig_text,
+                    mod_text,
+                    fromfile=f"original/{original_path.name}",
+                    tofile=f"modded/{modded_path.name}",
+                    n=context,
+                )
+                diff_str = "\n".join(diff_lines)
+                changed_lines = _extract_changed_lines(diff_str)
+            else:
+                diff_truncated = True
+        
+        diffs.append(
+            FileDiff(
+                path=original_path.name,
+                kind="modified-text",
+                diff=diff_str,
+                param_changes=param_changes or None,
+                diff_truncated=diff_truncated,
+                changed_lines=changed_lines,
+            )
+        )
+    else:
+        diffs.append(FileDiff(path=original_path.name, kind="modified-binary"))
+    
+    return diffs
 
 
 def diff_archives(

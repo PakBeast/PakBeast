@@ -49,7 +49,7 @@ def build_diff_tab(app: "App", parent) -> None:
     # Baseline selector
     baseline_label = ctk.CTkLabel(
         controls,
-        text="Original PAK:",
+        text="Original:",
         font=ctk.CTkFont(size=12, weight="bold"),
     )
     baseline_label.pack(side="left", padx=(0, 8))
@@ -59,14 +59,14 @@ def build_diff_tab(app: "App", parent) -> None:
         controls,
         textvariable=baseline_var,
         width=320,
-        placeholder_text="Select baseline (original) .pak",
+        placeholder_text="Select baseline (original) file",
     )
     baseline_entry.pack(side="left", padx=(0, 8))
 
     def pick_baseline():
         p = filedialog.askopenfilename(
-            title="Select Original PAK",
-            filetypes=[("PAK/ZIP", "*.pak *.zip"), ("All files", "*.*")]
+            title="Select Original PAK or Text File",
+            filetypes=[("PAK/ZIP", "*.pak *.zip"), ("Text files", "*.txt *.loot *.scr *.cfg *.json"), ("All files", "*.*")]
         )
         if p:
             baseline_var.set(p)
@@ -81,10 +81,45 @@ def build_diff_tab(app: "App", parent) -> None:
     )
     pick_btn.pack(side="left", padx=(0, 12))
 
+    # Modded selector (optional - falls back to current_pak_path)
+    modded_label = ctk.CTkLabel(
+        controls,
+        text="Modded:",
+        font=ctk.CTkFont(size=12, weight="bold"),
+    )
+    modded_label.pack(side="left", padx=(0, 8))
+
+    modded_var = ctk.StringVar(value="")
+    modded_entry = ctk.CTkEntry(
+        controls,
+        textvariable=modded_var,
+        width=320,
+        placeholder_text="Select modded file (or use loaded PAK)",
+    )
+    modded_entry.pack(side="left", padx=(0, 8))
+
+    def pick_modded():
+        p = filedialog.askopenfilename(
+            title="Select Modded PAK or Text File",
+            filetypes=[("PAK/ZIP", "*.pak *.zip"), ("Text files", "*.txt *.loot *.scr *.cfg *.json"), ("All files", "*.*")]
+        )
+        if p:
+            modded_var.set(p)
+            _set_status(app, f"Modded file selected: {Path(p).name}")
+
+    pick_modded_btn = ctk.CTkButton(
+        controls,
+        text="Set Modded",
+        command=pick_modded,
+        width=110,
+        height=32,
+    )
+    pick_modded_btn.pack(side="left", padx=(0, 12))
+
     # Extensions
     ext_label = ctk.CTkLabel(controls, text="Extensions:", font=ctk.CTkFont(size=12, weight="bold"))
     ext_label.pack(side="left", padx=(0, 6))
-    ext_var = ctk.StringVar(value=".scr .cfg .json .txt")
+    ext_var = ctk.StringVar(value=".scr .cfg .json .txt .loot")
     ext_entry = ctk.CTkEntry(controls, textvariable=ext_var, width=180)
     ext_entry.pack(side="left", padx=(0, 10))
 
@@ -101,7 +136,7 @@ def build_diff_tab(app: "App", parent) -> None:
         text="Compare",
         width=100,
         height=32,
-        command=lambda: _run_compare(app, baseline_var, ext_var, ctx_var, results_list, diff_text, params_list, changed_list),
+        command=lambda: _run_compare(app, baseline_var, modded_var, ext_var, ctx_var, results_list, diff_text, params_list, filter_var, all_diffs_storage, apply_filter),
     )
     compare_btn.pack(side="left")
 
@@ -121,8 +156,38 @@ def build_diff_tab(app: "App", parent) -> None:
     list_frame.configure(width=380)
     list_frame.pack_propagate(False)
 
+    # Filter/search box for results
+    filter_frame = ctk.CTkFrame(list_frame, fg_color="transparent")
+    filter_frame.pack(fill="x", padx=6, pady=(6, 4))
+    
+    filter_label = ctk.CTkLabel(
+        filter_frame,
+        text="Filter:",
+        font=ctk.CTkFont(size=11, weight="bold"),
+    )
+    filter_label.pack(side="left", padx=(0, 6))
+    
+    filter_var = ctk.StringVar(value="")
+    filter_entry = ctk.CTkEntry(
+        filter_frame,
+        textvariable=filter_var,
+        placeholder_text="Filter by file path/name...",
+        width=300,
+    )
+    filter_entry.pack(side="left", fill="x", expand=True)
+    
+    clear_filter_btn = ctk.CTkButton(
+        filter_frame,
+        text="✕",
+        width=30,
+        height=24,
+        command=lambda: filter_var.set(""),
+        font=ctk.CTkFont(size=12),
+    )
+    clear_filter_btn.pack(side="left", padx=(4, 0))
+
     results_list = ctk.CTkScrollableFrame(list_frame, fg_color="transparent")
-    results_list.pack(fill="both", expand=True, padx=6, pady=6)
+    results_list.pack(fill="both", expand=True, padx=6, pady=(0, 6))
 
     detail_frame = ctk.CTkFrame(split, fg_color=("gray95", "gray18"), corner_radius=6)
     detail_frame.pack(side="left", fill="both", expand=True)
@@ -134,14 +199,42 @@ def build_diff_tab(app: "App", parent) -> None:
     params_list = ctk.CTkScrollableFrame(tab_params, fg_color="transparent")
     params_list.pack(fill="both", expand=True, padx=10, pady=10)
 
-    tab_changed = tabview.add("Changed lines")
-    changed_list = ctk.CTkScrollableFrame(tab_changed, fg_color="transparent")
-    changed_list.pack(fill="both", expand=True, padx=10, pady=10)
-
     tab_diff = tabview.add("Diff")
     diff_text = ctk.CTkTextbox(tab_diff)
     diff_text.pack(fill="both", expand=True, padx=10, pady=10)
     diff_text.configure(state="disabled")
+
+    # Store all diffs and filter function - need to be accessible in _run_compare
+    all_diffs_storage = {"diffs": [], "baseline_path": None, "current_path": None, "context": 3, "diff_text": diff_text, "params_list": params_list}
+    
+    def apply_filter():
+        """Apply filter to the results list."""
+        filter_text = filter_var.get().lower().strip()
+        if filter_text:
+            filtered = [d for d in all_diffs_storage["diffs"] if filter_text in d.path.lower()]
+            # Update summary to show filtered count
+            if hasattr(app, 'set_diff_summary') and all_diffs_storage["diffs"]:
+                total = len(all_diffs_storage["diffs"])
+                shown = len(filtered)
+                if shown < total:
+                    app.set_diff_summary(f"Showing {shown} of {total} results (filtered)")
+                else:
+                    app.set_diff_summary(f"Shown — Added: {sum(1 for d in all_diffs_storage['diffs'] if d.kind == 'added')} • Modified text: {sum(1 for d in all_diffs_storage['diffs'] if d.kind == 'modified-text')} • Modified binary: {sum(1 for d in all_diffs_storage['diffs'] if d.kind == 'modified-binary')}")
+        else:
+            filtered = all_diffs_storage["diffs"]
+        
+        _populate_results_list(
+            app,
+            results_list,
+            filtered,
+            all_diffs_storage["diff_text"],
+            all_diffs_storage["params_list"],
+            all_diffs_storage["baseline_path"],
+            all_diffs_storage["current_path"],
+            all_diffs_storage["context"],
+        )
+    
+    filter_var.trace_add("write", lambda *args: apply_filter())
 
     def set_summary(text: str):
         summary_var.set(text)
@@ -149,17 +242,20 @@ def build_diff_tab(app: "App", parent) -> None:
     app.set_diff_summary = set_summary
 
 
-def _run_compare(app: "App", baseline_var, ext_var, ctx_var, results_list, diff_text, params_list, changed_list):
+def _run_compare(app: "App", baseline_var, modded_var, ext_var, ctx_var, results_list, diff_text, params_list, filter_var, all_diffs_storage, apply_filter):
     from pathlib import Path
 
     baseline = baseline_var.get().strip()
-    current = str(app.current_pak_path) if app.current_pak_path else ""
+    modded = modded_var.get().strip()
+    # Fall back to current_pak_path if modded not specified
+    if not modded:
+        modded = str(app.current_pak_path) if app.current_pak_path else ""
 
     if not baseline or not Path(baseline).exists():
-        _set_status(app, "Select a valid baseline pak first", "#E53935")
+        _set_status(app, "Select a valid baseline file first", "#E53935")
         return
-    if not current or not Path(current).exists():
-        _set_status(app, "Load a pak to compare against baseline", "#E53935")
+    if not modded or not Path(modded).exists():
+        _set_status(app, "Select a modded file or load a pak to compare against baseline", "#E53935")
         return
 
     try:
@@ -176,7 +272,7 @@ def _run_compare(app: "App", baseline_var, ext_var, ctx_var, results_list, diff_
         try:
             diffs, summary = run_diff(
                 original_path=Path(baseline),
-                modded_path=Path(current),
+                modded_path=Path(modded),
                 extensions=extensions,
                 context=context,
                 include_diff=False,  # lazy load per file to keep UI fast
@@ -194,24 +290,24 @@ def _run_compare(app: "App", baseline_var, ext_var, ctx_var, results_list, diff_
                 f"Shown — Added: {summary['added']} • Modified text: {summary['modified_text']} • Modified binary: {summary['modified_binary']}"
             )
             app.set_diff_summary(summary_display)
-            _populate_results_list(
-                app,
-                results_list,
-                filtered,
-                diff_text,
-                params_list,
-                Path(baseline),
-                Path(current),
-                context,
-                changed_list,
-            )
+            
+            # Store all diffs for filtering
+            all_diffs_storage["diffs"] = filtered
+            all_diffs_storage["baseline_path"] = Path(baseline)
+            all_diffs_storage["current_path"] = Path(modded)
+            all_diffs_storage["context"] = context
+            all_diffs_storage["diff_text"] = diff_text
+            all_diffs_storage["params_list"] = params_list
+            
+            # Apply current filter (if any)
+            apply_filter()
 
         app.after(0, update_ui)
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-def _populate_results_list(app: "App", frame: ctk.CTkScrollableFrame, diffs, diff_text, params_list, baseline_path: Path, current_path: Path, context: int, changed_list):
+def _populate_results_list(app: "App", frame: ctk.CTkScrollableFrame, diffs, diff_text, params_list, baseline_path: Path, current_path: Path, context: int):
     for child in frame.winfo_children():
         child.destroy()
     MAX_ITEMS = 400  # safety cap to keep UI responsive
@@ -221,13 +317,15 @@ def _populate_results_list(app: "App", frame: ctk.CTkScrollableFrame, diffs, dif
             break
         row = ctk.CTkFrame(frame, fg_color=("gray90", "gray16"), corner_radius=4)
         row.pack(fill="x", padx=4, pady=2)
-        kind_color = {
-            "added": "#43A047",
-            "removed": "#E53935",
-            "modified-text": "#FB8C00",
-            "modified-binary": "#8E24AA",
-        }.get(d.kind, "#90A4AE")
-        badge = ctk.CTkLabel(row, text=d.kind, text_color=kind_color, font=ctk.CTkFont(size=11, weight="bold"))
+        kind_info = {
+            "added": ("➕ ADDED", "#43A047"),
+            "removed": ("➖ REMOVED", "#E53935"),
+            "modified-text": ("✏️ MODIFIED", "#FB8C00"),
+            "modified-binary": ("🔷 BINARY", "#8E24AA"),
+        }.get(d.kind, ("❓ UNKNOWN", "#90A4AE"))
+        
+        badge_text, kind_color = kind_info
+        badge = ctk.CTkLabel(row, text=badge_text, text_color=kind_color, font=ctk.CTkFont(size=10, weight="bold"))
         badge.pack(side="left", padx=6, pady=4)
         label = ctk.CTkButton(
             row,
@@ -236,7 +334,7 @@ def _populate_results_list(app: "App", frame: ctk.CTkScrollableFrame, diffs, dif
             hover_color=("gray80", "gray25"),
             text_color=("black", "white"),
             anchor="w",
-            command=lambda diff=d: _show_diff(diff, diff_text, params_list, baseline_path, current_path, context, changed_list),
+            command=lambda diff=d: _show_diff(diff, diff_text, params_list, baseline_path, current_path, context),
         )
         label.pack(side="left", fill="x", expand=True, padx=(4, 8))
         shown += 1
@@ -252,65 +350,9 @@ def _populate_results_list(app: "App", frame: ctk.CTkScrollableFrame, diffs, dif
         note.pack(fill="x", padx=8, pady=6)
 
 
-def _populate_changed_lines(changed_list: ctk.CTkScrollableFrame, changed_lines):
-    """Helper to populate the changed lines list with line numbers."""
-    for child in changed_list.winfo_children():
-        child.destroy()
-    if changed_lines:
-        MAX_CHANGED = 200
-        count = 0
-        for item in changed_lines:
-            if count >= MAX_CHANGED:
-                break
-            # Handle both old format (2-tuple) and new format (4-tuple with line numbers)
-            if len(item) == 4:
-                old_line, new_line, old_line_num, new_line_num = item
-            else:
-                old_line, new_line = item
-                old_line_num, new_line_num = None, None
-            
-            row = ctk.CTkFrame(changed_list, fg_color="transparent")
-            row.pack(fill="x", padx=4, pady=1)
-            
-            if old_line is not None and new_line is not None:
-                # Changed line - show both with line numbers
-                line_info = ""
-                if old_line_num is not None and new_line_num is not None:
-                    line_info = f"Line {old_line_num} → {new_line_num}: "
-                elif old_line_num is not None:
-                    line_info = f"Line {old_line_num} → ?: "
-                elif new_line_num is not None:
-                    line_info = f"Line ? → {new_line_num}: "
-                
-                if line_info:
-                    ctk.CTkLabel(row, text=line_info, text_color="#90A4AE", font=ctk.CTkFont(size=10, weight="bold"), anchor="w", width=120).pack(side="left", padx=(0, 4))
-                ctk.CTkLabel(row, text=old_line, text_color="#e57373", anchor="w").pack(anchor="w")
-                ctk.CTkLabel(row, text=new_line, text_color="#81c784", anchor="w").pack(anchor="w", pady=(0, 4))
-            elif old_line is not None:
-                # Removed line
-                line_info = f"Line {old_line_num}:" if old_line_num is not None else ""
-                if line_info:
-                    ctk.CTkLabel(row, text=line_info, text_color="#90A4AE", font=ctk.CTkFont(size=10, weight="bold"), anchor="w", width=120).pack(side="left", padx=(0, 4))
-                ctk.CTkLabel(row, text=old_line, text_color="#e57373", anchor="w").pack(anchor="w")
-            elif new_line is not None:
-                # Added line
-                line_info = f"Line {new_line_num}:" if new_line_num is not None else ""
-                if line_info:
-                    ctk.CTkLabel(row, text=line_info, text_color="#90A4AE", font=ctk.CTkFont(size=10, weight="bold"), anchor="w", width=120).pack(side="left", padx=(0, 4))
-                ctk.CTkLabel(row, text=new_line, text_color="#81c784", anchor="w").pack(anchor="w")
-            count += 1
-        if len(changed_lines) > MAX_CHANGED:
-            note = ctk.CTkLabel(changed_list, text=f"... {len(changed_lines) - MAX_CHANGED} more changes not shown", text_color="#90A4AE", font=ctk.CTkFont(size=11))
-            note.pack(anchor="w", padx=4, pady=2)
-    else:
-        row = ctk.CTkFrame(changed_list, fg_color="transparent")
-        row.pack(fill="x", padx=4, pady=1)
-        ctk.CTkLabel(row, text="No changed lines detected").pack(anchor="w")
-
-
-def _show_diff(diff, diff_text: ctk.CTkTextbox, params_list: ctk.CTkScrollableFrame, baseline_path: Path, current_path: Path, context: int, changed_list: ctk.CTkScrollableFrame):
+def _show_diff(diff, diff_text: ctk.CTkTextbox, params_list: ctk.CTkScrollableFrame, baseline_path: Path, current_path: Path, context: int):
     # Refresh diff data if needed (lazy loading for performance)
-    if diff.diff is None or diff.changed_lines is None:
+    if diff.diff is None:
         refreshed = diff_file(baseline_path, current_path, diff.path, context, max_text_bytes=1_000_000)
         diff.diff = refreshed.diff
         diff.param_changes = refreshed.param_changes
@@ -321,18 +363,65 @@ def _show_diff(diff, diff_text: ctk.CTkTextbox, params_list: ctk.CTkScrollableFr
     for child in params_list.winfo_children():
         child.destroy()
     if diff.param_changes:
+        # Summary header
+        summary_frame = ctk.CTkFrame(params_list, fg_color=("gray95", "gray20"), corner_radius=4)
+        summary_frame.pack(fill="x", padx=4, pady=(0, 8))
+        summary_label = ctk.CTkLabel(
+            summary_frame,
+            text=f"📋 {len(diff.param_changes)} parameter change(s)",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=("gray50", "gray70"),
+        )
+        summary_label.pack(padx=8, pady=6)
+        
         for name, old, new in diff.param_changes:
-            row = ctk.CTkFrame(params_list, fg_color="transparent")
-            row.pack(fill="x", padx=4, pady=6)
-            ctk.CTkLabel(row, text=name, width=200, anchor="w").pack(side="left", padx=(0, 12))
-            ctk.CTkLabel(row, text=f"{old} → {new}", anchor="w").pack(side="left", padx=(0, 8))
+            param_container = ctk.CTkFrame(params_list, fg_color=("gray98", "gray15"), corner_radius=4)
+            param_container.pack(fill="x", padx=4, pady=3)
+            
+            # Parameter name header
+            name_frame = ctk.CTkFrame(param_container, fg_color="transparent")
+            name_frame.pack(fill="x", padx=6, pady=(6, 4))
+            name_label = ctk.CTkLabel(
+                name_frame,
+                text=f"🔧 {name}",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("black", "white"),
+            )
+            name_label.pack(side="left")
+            
+            # Old value
+            old_frame = ctk.CTkFrame(param_container, fg_color=("gray95", "gray18"), corner_radius=3)
+            old_frame.pack(fill="x", padx=6, pady=(0, 4))
+            old_label = ctk.CTkLabel(
+                old_frame,
+                text=f"➖ OLD: {old}",
+                text_color="#e57373",
+                font=ctk.CTkFont(size=10),
+                anchor="w",
+            )
+            old_label.pack(fill="x", padx=6, pady=4)
+            
+            # New value
+            new_frame = ctk.CTkFrame(param_container, fg_color=("gray95", "gray18"), corner_radius=3)
+            new_frame.pack(fill="x", padx=6, pady=(0, 6))
+            new_label = ctk.CTkLabel(
+                new_frame,
+                text=f"➕ NEW: {new}",
+                text_color="#81c784",
+                font=ctk.CTkFont(size=10),
+                anchor="w",
+            )
+            new_label.pack(fill="x", padx=6, pady=4)
     else:
         row = ctk.CTkFrame(params_list, fg_color="transparent")
-        row.pack(fill="x", padx=4, pady=1)
-        ctk.CTkLabel(row, text="No param changes detected").pack(anchor="w")
-
-    # Populate changed lines
-    _populate_changed_lines(changed_list, diff.changed_lines)
+        row.pack(fill="x", padx=4, pady=8)
+        no_params_label = ctk.CTkLabel(
+            row,
+            text="✓ No parameter changes detected",
+            text_color="#90A4AE",
+            font=ctk.CTkFont(size=11),
+        )
+        no_params_label.pack(anchor="w")
 
     # Populate diff text
     diff_text.configure(state="normal")

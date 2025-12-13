@@ -47,15 +47,41 @@ def run_diff(
 ) -> Tuple[List[FileDiff], dict]:
     """
     Run archive diff and return both detailed diffs and a summary dict.
+    Supports both ZIP archives and plain text files.
     """
-    diffs = diff_archives(
-        original_path=original_path,
-        modded_path=modded_path,
-        extensions=[ext.lower() for ext in extensions],
-        context=context,
-        include_diff=include_diff,
-        max_text_bytes=max_text_bytes,
-    )
+    from .pak_diff import _is_zip_file, diff_plain_text_files, diff_archives
+    
+    # Check if both files are ZIP archives
+    orig_is_zip = _is_zip_file(original_path)
+    mod_is_zip = _is_zip_file(modded_path)
+    
+    if orig_is_zip and mod_is_zip:
+        # Both are ZIP archives - use archive diff
+        diffs = diff_archives(
+            original_path=original_path,
+            modded_path=modded_path,
+            extensions=[ext.lower() for ext in extensions],
+            context=context,
+            include_diff=include_diff,
+            max_text_bytes=max_text_bytes,
+        )
+    elif not orig_is_zip and not mod_is_zip:
+        # Both are plain text files - use plain text diff
+        # Check if file extension matches the filter
+        orig_ext = original_path.suffix.lower()
+        if not extensions or orig_ext in [ext.lower() for ext in extensions]:
+            diffs = diff_plain_text_files(
+                original_path=original_path,
+                modded_path=modded_path,
+                context=context,
+                include_diff=include_diff,
+                max_text_bytes=max_text_bytes,
+            )
+        else:
+            diffs = []
+    else:
+        # Mixed types - not supported
+        diffs = []
     summary = {
         "added": len([d for d in diffs if d.kind == "added"]),
         "removed": len([d for d in diffs if d.kind == "removed"]),
@@ -72,27 +98,47 @@ def diff_file(
     context: int,
     max_text_bytes: int = 1_000_000,
 ) -> FileDiff:
-    """Compute diff for a single file path inside two archives."""
-    with zipfile.ZipFile(original_path, "r") as zf_orig, zipfile.ZipFile(
-        modded_path, "r"
-    ) as zf_mod:
-        try:
-            orig_bytes = zf_orig.read(rel_path)
-            mod_bytes = zf_mod.read(rel_path)
-        except KeyError:
-            # If missing in one archive, treat accordingly
-            if rel_path in zf_orig.namelist():
+    """Compute diff for a single file path inside two archives or plain text files."""
+    from .pak_diff import _is_zip_file
+    
+    orig_is_zip = _is_zip_file(original_path)
+    mod_is_zip = _is_zip_file(modded_path)
+    
+    if orig_is_zip and mod_is_zip:
+        # Both are ZIP archives
+        with zipfile.ZipFile(original_path, "r") as zf_orig, zipfile.ZipFile(
+            modded_path, "r"
+        ) as zf_mod:
+            try:
+                orig_bytes = zf_orig.read(rel_path)
+                mod_bytes = zf_mod.read(rel_path)
+            except KeyError:
+                # If missing in one archive, treat accordingly
+                if rel_path in zf_orig.namelist():
+                    return FileDiff(path=rel_path, kind="removed")
+                if rel_path in zf_mod.namelist():
+                    return FileDiff(path=rel_path, kind="added")
                 return FileDiff(path=rel_path, kind="removed")
-            if rel_path in zf_mod.namelist():
-                return FileDiff(path=rel_path, kind="added")
+    else:
+        # Plain text files - compare directly
+        try:
+            with open(original_path, "rb") as f:
+                orig_bytes = f.read()
+        except (IOError, OSError):
             return FileDiff(path=rel_path, kind="removed")
-
+        
+        try:
+            with open(modded_path, "rb") as f:
+                mod_bytes = f.read()
+        except (IOError, OSError):
+            return FileDiff(path=rel_path, kind="added")
+    
     if orig_bytes == mod_bytes:
         return FileDiff(path=rel_path, kind="modified-text", diff="[No changes]", param_changes=None)
-
+    
     orig_is_text = _is_text(orig_bytes)
     mod_is_text = _is_text(mod_bytes)
-
+    
     if orig_is_text and mod_is_text:
         orig_text = _decode_text(orig_bytes).splitlines()
         mod_text = _decode_text(mod_bytes).splitlines()
@@ -126,6 +172,6 @@ def diff_file(
             diff_truncated=diff_truncated,
             changed_lines=changed_lines,
         )
-
+    
     return FileDiff(path=rel_path, kind="modified-binary", diff=None, param_changes=None)
 

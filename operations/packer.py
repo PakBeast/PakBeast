@@ -88,11 +88,25 @@ def _run_packing_in_background(app: 'App', out_path: str):
             
             # Track if we formatted JSON (so we can minify it back)
             was_json_formatted = False
+            # Track original line ending and trailing newline state
+            detected_line_ending = '\n'
+            original_ends_with_newline = True  # Default assumption
             
             # Read from staging directory if it exists (from multi-pack files),
             # otherwise read from the ORIGINAL .pak file to avoid double-applying edits
             if staging_file_path.exists():
-                modified_lines = staging_file_path.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                # Read from staging and detect line endings
+                file_content = staging_file_path.read_text(encoding="utf-8", errors="ignore")
+                file_bytes = staging_file_path.read_bytes()
+                has_crlf = b'\r\n' in file_bytes
+                detected_line_ending = '\r\n' if has_crlf else '\n'
+                original_ends_with_newline = file_content.endswith('\n') or file_content.endswith('\r\n')
+                modified_lines = file_content.splitlines(True)
+                # Normalize line endings
+                if modified_lines:
+                    for i in range(len(modified_lines) - 1):
+                        if not modified_lines[i].endswith(detected_line_ending):
+                            modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
             else:
                 # Read from original .pak file to get unmodified content, then apply edits fresh
                 # This avoids double-applying edits if the user saved the file
@@ -103,7 +117,15 @@ def _run_packing_in_background(app: 'App', out_path: str):
                         with zipfile.ZipFile(app.current_pak_path, 'r') as zf:
                             if rel_path_str in zf.namelist():
                                 # Read original file from .pak archive
-                                original_content = zf.read(rel_path_str).decode('utf-8', errors='ignore')
+                                original_content_bytes = zf.read(rel_path_str)
+                                original_content = original_content_bytes.decode('utf-8', errors='ignore')
+                                
+                                # Detect line ending type from original content (check bytes, not decoded string)
+                                has_crlf = b'\r\n' in original_content_bytes
+                                detected_line_ending = '\r\n' if has_crlf else '\n'
+                                
+                                # Check if file ends with a newline (preserve this)
+                                original_ends_with_newline = original_content.endswith('\n') or original_content.endswith('\r\n')
                                 
                                 # Check if this is a JSON file (minified) - format it like the preview does
                                 # This ensures line numbers match what the user sees in the preview
@@ -120,45 +142,93 @@ def _run_packing_in_background(app: 'App', out_path: str):
                                         # Format JSON to match preview (adds newlines)
                                         json_data = json.loads(original_content)
                                         formatted_content = json.dumps(json_data, indent=2, ensure_ascii=False)
-                                        modified_lines = formatted_content.splitlines(True)
+                                        # Split and normalize to detected line ending type
+                                        modified_lines = formatted_content.splitlines()
+                                        # Add detected line ending to all but last line
+                                        for i in range(len(modified_lines) - 1):
+                                            modified_lines[i] += detected_line_ending
                                         was_json_formatted = True
                                     except (json.JSONDecodeError, ValueError):
-                                        # Not valid JSON, use as-is
+                                        # Not valid JSON, use as-is with splitlines(True) to preserve endings
                                         modified_lines = original_content.splitlines(True)
+                                        # Normalize line endings to detected type
+                                        if modified_lines:
+                                            for i in range(len(modified_lines) - 1):
+                                                if not modified_lines[i].endswith(detected_line_ending):
+                                                    modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
                                 else:
                                     # Use splitlines(True) to preserve line endings
                                     modified_lines = original_content.splitlines(True)
-                                
-                                # If still only 1 line, try manual split as fallback
-                                if len(modified_lines) == 1 and ('\n' in original_content or '\r' in original_content):
-                                    if '\r\n' in original_content:
-                                        modified_lines = original_content.split('\r\n')
+                                    # Normalize line endings to detected type for consistency
+                                    if modified_lines:
                                         for i in range(len(modified_lines) - 1):
-                                            modified_lines[i] += '\r\n'
-                                    else:
-                                        modified_lines = original_content.split('\n')
-                                        for i in range(len(modified_lines) - 1):
-                                            modified_lines[i] += '\n'
+                                            if not modified_lines[i].endswith(detected_line_ending):
+                                                modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
                             else:
                                 # Fallback to temp_root if not in .pak
                                 if not p.exists():
                                     print(f"WARNING: File not found: {p}")
                                     failed_edits.append(f"{Path(fpath).name}: File not found")
                                     continue
-                                modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                                # Read from temp_root and detect line endings
+                                file_content = p.read_text(encoding="utf-8", errors="ignore")
+                                file_bytes = p.read_bytes()
+                                has_crlf = b'\r\n' in file_bytes
+                                detected_line_ending = '\r\n' if has_crlf else '\n'
+                                original_ends_with_newline = file_content.endswith('\n') or file_content.endswith('\r\n')
+                                modified_lines = file_content.splitlines(True)
+                                # Normalize line endings
+                                if modified_lines:
+                                    for i in range(len(modified_lines) - 1):
+                                        if not modified_lines[i].endswith(detected_line_ending):
+                                            modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
                     except Exception as pak_error:
                         # Fallback to temp_root if .pak read fails
                         if not p.exists():
                             failed_edits.append(f"{Path(fpath).name}: File not found")
                             continue
-                        modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                        # Read from temp_root and detect line endings
+                        file_content = p.read_text(encoding="utf-8", errors="ignore")
+                        file_bytes = p.read_bytes()
+                        has_crlf = b'\r\n' in file_bytes
+                        detected_line_ending = '\r\n' if has_crlf else '\n'
+                        original_ends_with_newline = file_content.endswith('\n') or file_content.endswith('\r\n')
+                        modified_lines = file_content.splitlines(True)
+                        # Normalize line endings
+                        if modified_lines:
+                            for i in range(len(modified_lines) - 1):
+                                if not modified_lines[i].endswith(detected_line_ending):
+                                    modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
                 else:
                     # Fallback to temp_root if no .pak path available
                     if not p.exists():
                         failed_edits.append(f"{Path(fpath).name}: File not found")
                         continue
-                    modified_lines = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+                    # Read from temp_root and detect line endings
+                    file_content = p.read_text(encoding="utf-8", errors="ignore")
+                    file_bytes = p.read_bytes()
+                    has_crlf = b'\r\n' in file_bytes
+                    detected_line_ending = '\r\n' if has_crlf else '\n'
+                    original_ends_with_newline = file_content.endswith('\n') or file_content.endswith('\r\n')
+                    modified_lines = file_content.splitlines(True)
+                    # Normalize line endings
+                    if modified_lines:
+                        for i in range(len(modified_lines) - 1):
+                            if not modified_lines[i].endswith(detected_line_ending):
+                                modified_lines[i] = modified_lines[i].rstrip('\r\n') + detected_line_ending
 
+            # Use detected line ending (already set above, or default to \n)
+            # If not detected yet, detect from existing lines
+            if not detected_line_ending or detected_line_ending == '\n':
+                if modified_lines:
+                    for line in modified_lines[:10]:  # Check first 10 lines
+                        if line.endswith('\r\n'):
+                            detected_line_ending = '\r\n'
+                            break
+                        elif line.endswith('\n'):
+                            detected_line_ending = '\n'
+                            break
+            
             edits.sort(key=lambda e: (e.line_number, e.insertion_index), reverse=True)
             for e in edits:
                 if e.line_number > len(modified_lines):
@@ -168,17 +238,13 @@ def _run_packing_in_background(app: 'App', out_path: str):
                 elif e.edit_type == 'LINE_DELETE':
                     del modified_lines[e.line_number]
                 elif e.edit_type == 'LINE_INSERT':
-                    ending = '\n'
-                    if e.line_number < len(modified_lines) and modified_lines[e.line_number].endswith('\r\n'):
-                        ending = '\r\n'
-                    elif modified_lines and modified_lines[-1].endswith('\r\n'):
-                        ending = '\r\n'
-                    modified_lines.insert(e.line_number, e.current_value + ending)
+                    # Use detected line ending consistently
+                    modified_lines.insert(e.line_number, e.current_value + detected_line_ending)
                 elif e.edit_type == 'LINE_REPLACE':
                     if e.line_number >= len(modified_lines):
                         continue
-                    ending = '\n' if not modified_lines[e.line_number].endswith('\r\n') else '\r\n'
-                    modified_lines[e.line_number] = e.current_value + ending
+                    # Use detected line ending consistently
+                    modified_lines[e.line_number] = e.current_value + detected_line_ending
                 elif e.edit_type == 'VALUE_REPLACE':
                     orig = modified_lines[e.line_number]
                     applied = False
@@ -221,6 +287,7 @@ def _run_packing_in_background(app: 'App', out_path: str):
                                     applied = True
                                     print(f"  ✓ Applied using fallback method")
 
+            # Join lines preserving line endings
             final_content = "".join(modified_lines)
             
             # If this was a JSON file that we formatted, minify it back to match original format
@@ -231,12 +298,26 @@ def _run_packing_in_background(app: 'App', out_path: str):
                     # Parse and minify back to original format (no spaces, compact)
                     json_data = json.loads(final_content)
                     final_content = json.dumps(json_data, separators=(',', ':'), ensure_ascii=False)
+                    # Minified JSON typically doesn't have newlines, but preserve original ending if it had one
                 except (json.JSONDecodeError, ValueError):
                     # If minification fails, keep formatted version
                     pass
             
+            # Preserve original file ending (whether it had trailing newline or not)
+            # Check current state
+            currently_ends_with_newline = final_content.endswith('\n') or final_content.endswith('\r\n')
+            
+            # Only adjust if it doesn't match original
+            if original_ends_with_newline and not currently_ends_with_newline:
+                # Original had trailing newline, add it
+                final_content += detected_line_ending
+            elif not original_ends_with_newline and currently_ends_with_newline:
+                # Original didn't have trailing newline, remove it
+                final_content = final_content.rstrip('\n\r')
+            
             staging_file_path.parent.mkdir(parents=True, exist_ok=True)
-            staging_file_path.write_text(final_content, encoding="utf-8")
+            # Use newline='' to prevent Python from normalizing line endings
+            staging_file_path.write_text(final_content, encoding="utf-8", newline='')
         
         # 3. Zip the staging directory
         with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:

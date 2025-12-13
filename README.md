@@ -61,6 +61,7 @@ The executable will be in the `dist` folder.
 ## Keyboard Shortcuts
 
 - **Enter**: Search for parameters
+- **Ctrl+F**: Search within opened file (in preview panel)
 - **Double-click**: Edit value or delete block
 - **Right-click**: Context menu
 
