@@ -1,0 +1,58 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.spec.bak
+
+# PyInstaller
+*.manifest
+
+# Debug and test files
+debug/
+tests/
+pak_samples/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+
+# User-specific config files (created at runtime in user's home directory)
+.pakbeast/
+
+# Project-specific temporary directories
+pakbeast_data_*/
+pakbeast_pack_*/
+
+# User project files (optional - uncomment if you don't want to track example projects)
+# *.dl3mod
+
+# Legacy/backup folders (uncomment if you want to exclude them from version control)
+# OLD/
+
