@@ -1,59 +1,64 @@
-# PakBeast
+# PakBeast 🎮
 
-A modern GUI tool for editing `.pak` files in **Dying Light: The Beast**. Search, edit, and modify game script parameters, properties, and blocks with an intuitive interface.
+A user-friendly tool for editing game files in **Dying Light: The Beast**. Easily search, edit, and modify game parameters without needing to understand complex code structures.
 
-## Features
+## ✨ What Can You Do?
 
-- **Search & Edit**: Find and modify `Param()`, properties, and code blocks across `.scr`, `.ini`, `.loot`, `.gui`, `.cfg`, `.json`, and `.txt` files
-- **Visual Editor**: Syntax-highlighted preview with intuitive editing interface
-- **Project Management**: Save and load modifications as `.pbm` project files
-- **File Comparison**: Compare exported TXT files with detailed change tracking
-- **Build Mods**: Compile edits into modified `.pak` files
-- **Modern UI**: Clean, customizable interface built with CustomTkinter
+- 🔍 **Search & Find**: Quickly locate any parameter, property, or code block in your game files
+- ✏️ **Easy Editing**: Double-click to edit values with a simple, visual interface
+- 💾 **Save Your Work**: Save modifications as project files to continue later
+- 🔄 **Compare Changes**: See exactly what you changed with side-by-side comparisons
+- 📦 **Build Mods**: Create modified `.pak` files ready to use in your game
 
-## Installation
+## 🚀 Quick Start
 
-### Download
-Download the latest release from [GitHub Releases](https://github.com/PakBeast/PakBeast/releases).
+### Download & Install
 
-### Build from Source
-```bash
-# Install dependencies
-pip install -r requirements.txt
+1. Go to [GitHub Releases](https://github.com/PakBeast/PakBeast/releases)
+2. Download `PakBeast.exe` from the latest release
+3. Run the executable - no installation needed! ✨
 
-# Build executable
-python -m PyInstaller pakbeast.spec --clean
-```
+**System Requirements:**
 
-**Requirements:**
-- Python 3.8+
-- customtkinter >= 5.2.0
-- Pillow >= 10.0.0
-- pefile >= 2023.2.7
+- Windows 10 or later
+- No additional software needed
 
-## Usage
+## 📖 How to Use
 
-1. **Load**: Click **Open Game Data** to extract and browse files from a `.pak` file
-2. **Search**: Enter keywords to find parameters, properties, and blocks
-3. **Edit**: Double-click any result or preview line to modify values
-4. **Build**: Click **Build Mod** to compile edits into a modified `.pak` file
+### Step 1: Open Your Game Files
 
-**Tips:**
-- Save your work as a `.pbm` project file for later use
-- Export files as TXT and use the **Comparison** tab to view differences
+Click **Open Game Data** and select your `.pak` file. PakBeast will extract and display all available files.
 
-## Keyboard Shortcuts
+### Step 2: Search for What You Want to Change
 
-- **Enter**: Search for parameters
-- **Ctrl+F**: Search within opened file (preview panel)
-- **Double-click**: Edit value or delete block
-- **Right-click**: Context menu
+Type keywords in the search box and press **Enter**. You'll see all matching parameters, properties, and code blocks.
 
-## Credits
+### Step 3: Edit Values
 
-- **freeloadergt**: [Nexus Mods Profile](https://next.nexusmods.com/profile/freeloadergt?gameId=8178)
+- **Double-click** any search result or preview line to edit
+- Make your changes in the popup dialog
+- Your edits are saved automatically to the project
 
-## License
+### Step 4: Build Your Mod
+
+Click **Build Mod** to create a modified `.pak` file that you can use in your game!
+
+## 💡 Pro Tips
+
+- 💾 **Save Often**: Use **Save Project** to save your work as a `.pbm` file
+- 🔍 **Use Filters**: Narrow down search results by file type (`.scr`, `.ini`, `.loot`, etc.)
+- 📊 **Compare Files**: Export files as TXT and use the **Comparison** tab to review changes
+- ⌨️ **Keyboard Shortcuts**:
+  - `Enter` - Search
+  - `Ctrl+F` - Find in preview
+  - `Double-click` - Edit value
+  - `Right-click` - More options
+
+## 🙏 Credits
+
+Created by **freeloadergt** - [Nexus Mods Profile](https://next.nexusmods.com/profile/freeloadergt?gameId=8178)
+
+## 📄 License
 
 Copyright (C) 2025 PakBeast
 
